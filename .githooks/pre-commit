@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Check Rust formatting
+echo "Checking code formatting..."
+cargo fmt -- --check
+if [ $? -ne 0 ]; then
+    echo "Formatting check failed! Run 'cargo fmt' to fix."
+    exit 1
+fi
+
+# Run Clippy (Rust linter)
+echo "Running Clippy lint checks..."
+cargo clippy --all-targets --all-features -- -D warnings
+if [ $? -ne 0 ]; then
+    echo "Linting failed! Fix the issues before committing."
+    exit 1
+fi
+
+branch_name=$(git rev-parse --abbrev-ref HEAD)
+
+# Validate branch name format ((feat|bugfix|hotfix)/1234_XXX-XXX-XXX)
+valid_pattern="^(feat|bugfix|hotfix)/[0-9]{4}_[a-zA-Z]+(-[a-zA-Z]+)*$"
+if ! [[ $branch_name =~ $valid_pattern ]]; then
+    echo "Error: Branch name '$branch_name' doesn't match required pattern"
+    echo "Format should be: (feat|bugfix|hotfix)/1234_XXX-XXX-XXX"
+    echo "Examples:"
+    echo "  feat/1234_feature-add-login"
+    echo "  bugfix/5678_auth-fix-error"
+    echo "  hotfix/9012_crash-quick-fix"
+    exit 1
+fi
+
+commit_msg_file="$1"
+original_msg=$(cat "$commit_msg_file")
+
+new_msg="($branch_name) $original_msg"
+
+echo "$new_msg" > "$commit_msg_file"
+
+echo "Updated commit message to: $new_msg"
+
+exit 0
