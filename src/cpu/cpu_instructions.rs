@@ -129,7 +129,7 @@ impl CPU {
     }
 
     pub fn run(&mut self) {
-        let operation_codes: &HashMap<u8, &'static operation_codes::OperationCodes> =
+        let operation_codes: &HashMap<u8, &'static operation_codes::Operation> =
             &operation_codes::OPERATION_CODES_MAP;
         loop {
             let code = self.memory.memory[self.program_counter as usize];

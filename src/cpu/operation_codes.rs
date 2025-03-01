@@ -10,63 +10,88 @@ pub enum OperationName {
     IncrementXRegister,
 }
 
-pub struct OperationCodes {
+pub struct Operation {
     pub operation_code: u8,
-    pub operation_name: OperationName,
     pub len: u8,
     pub cycles: u8,
     pub addressing_mode: AddressingMode,
 }
-
-impl OperationCodes {
-    fn new(
-        operation_code: u8,
-        operation_name: OperationName,
-        len: u8,
-        cycles: u8,
-        addressing_mode: AddressingMode,
-    ) -> Self {
-        OperationCodes {
+impl Operation {
+    fn new(operation_code: u8, len: u8, cycles: u8, addressing_mode: AddressingMode) -> Self {
+        Operation {
             operation_code,
-            operation_name,
             len,
             cycles,
             addressing_mode,
         }
     }
 }
+pub struct OperationCodes {
+    pub operation_name: OperationName,
+    pub operations: Vec<Operation>,
+}
+impl OperationCodes {
+    fn new(operation_name: OperationName, operations: Vec<Operation>) -> Self {
+        OperationCodes {
+            operation_name,
+            operations,
+        }
+    }
+}
 
 lazy_static! {
-  pub static ref CPU_OPS_CODES: Vec<OperationCodes> = vec![
-      OperationCodes::new(0x00, OperationName::ForceInterrupt, 1, 7, AddressingMode::NoneAddressing),
-      OperationCodes::new(0xaa, OperationName::TransferAccumulatorToX, 1, 2, AddressingMode::NoneAddressing),
-      OperationCodes::new(0xe8, OperationName::IncrementXRegister, 1, 2, AddressingMode::NoneAddressing),
+    pub static ref CPU_OPS_CODES: Vec<OperationCodes> = vec![
+      OperationCodes::new(
+        OperationName::ForceInterrupt,
+        vec![
+          Operation::new(0x00, 1, 7, AddressingMode::NoneAddressing),
+        ]
+    ),
 
-      OperationCodes::new(0xa9, OperationName::LoadAccumulator, 2, 2, AddressingMode::Immediate),
-      OperationCodes::new(0xa5, OperationName::LoadAccumulator, 2, 3, AddressingMode::ZeroPage),
-      OperationCodes::new(0xb5, OperationName::LoadAccumulator, 2, 4, AddressingMode::ZeroPage_X),
-      OperationCodes::new(0xad, OperationName::LoadAccumulator, 3, 4, AddressingMode::Absolute),
-      OperationCodes::new(0xbd, OperationName::LoadAccumulator, 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_X),
-      OperationCodes::new(0xb9, OperationName::LoadAccumulator, 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
-      OperationCodes::new(0xa1, OperationName::LoadAccumulator, 2, 6, AddressingMode::Indirect_X),
-      OperationCodes::new(0xb1, OperationName::LoadAccumulator, 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
+      OperationCodes::new(
+        OperationName::TransferAccumulatorToX,
+        vec![
+          Operation::new(0xaa, 1, 2, AddressingMode::NoneAddressing)
+        ]
+    ),OperationCodes::new(OperationName::IncrementXRegister,
+        vec![
+          Operation::new(0xe8, 1, 2, AddressingMode::NoneAddressing)
+        ]
+    ),
 
-      OperationCodes::new(0x85, OperationName::StoreAccumulator, 2, 3, AddressingMode::ZeroPage),
-      OperationCodes::new(0x95, OperationName::StoreAccumulator, 2, 4, AddressingMode::ZeroPage_X),
-      OperationCodes::new(0x8d, OperationName::StoreAccumulator, 3, 4, AddressingMode::Absolute),
-      OperationCodes::new(0x9d, OperationName::StoreAccumulator, 3, 5, AddressingMode::Absolute_X),
-      OperationCodes::new(0x99, OperationName::StoreAccumulator, 3, 5, AddressingMode::Absolute_Y),
-      OperationCodes::new(0x81, OperationName::StoreAccumulator, 2, 6, AddressingMode::Indirect_X),
-      OperationCodes::new(0x91, OperationName::StoreAccumulator, 2, 6, AddressingMode::Indirect_Y),
-
-  ];
-
-
-  pub static ref OPERATION_CODES_MAP: HashMap<u8, &'static OperationCodes> = {
-      let mut map = HashMap::new();
-      for cpuop in &*CPU_OPS_CODES {
-          map.insert(cpuop.operation_code, cpuop);
-      }
-      map
-  };
+            OperationCodes::new(
+                OperationName::LoadAccumulator,
+                vec![
+                    Operation::new(0xa9, 2, 2, AddressingMode::Immediate),
+                    Operation::new(0xa5, 2, 3, AddressingMode::ZeroPage),
+                    Operation::new(0xb5, 2, 4, AddressingMode::ZeroPage_X),
+                    Operation::new(0xad, 3, 4, AddressingMode::Absolute),
+                    Operation::new(0xbd, 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_X),
+                    Operation::new(0xb9, 3, 4/*+1 if page crossed*/, AddressingMode::Absolute_Y),
+                    Operation::new(0xa1, 2, 6, AddressingMode::Indirect_X),
+                    Operation::new(0xb1, 2, 5/*+1 if page crossed*/, AddressingMode::Indirect_Y),
+                ]
+            ),
+        OperationCodes::new(
+            OperationName::StoreAccumulator,
+            vec![
+                    Operation::new(0x85, 2, 3, AddressingMode::ZeroPage),
+                    Operation::new(0x95, 2, 4, AddressingMode::ZeroPage_X),
+                    Operation::new(0x8d, 3, 4, AddressingMode::Absolute),
+                    Operation::new(0x9d, 3, 5, AddressingMode::Absolute_X),
+                    Operation::new(0x99, 3, 5, AddressingMode::Absolute_Y),
+                    Operation::new(0x81, 2, 6, AddressingMode::Indirect_X),
+                    Operation::new(0x91, 2, 6, AddressingMode::Indirect_Y),
+            ]
+        )
+];
+pub static ref OPERATION_CODES_MAP: HashMap<u8, &'static Operation> = {
+        let mut map = HashMap::new();
+        for cpu_operation in &*CPU_OPS_CODES {
+                for cpu_op in &*cpu_operation.operations {
+                        map.insert(cpu_op.operation_code, cpu_op);
+                }
+        }
+        map
+};
 }
