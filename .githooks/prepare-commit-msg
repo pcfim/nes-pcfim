@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Determine if we're in the middle of a rebase, merge, etc.
+in_rebase=$(git rev-parse --git-dir)/rebase-merge
+in_rebase_apply=$(git rev-parse --git-dir)/rebase-apply
+in_merge=$(git rev-parse --git-dir)/MERGE_HEAD
+
+if [ -d "$in_rebase" ] || [ -d "$in_rebase_apply" ] || [ -f "$in_merge" ]; then
+    commit_msg_file="$1"
+    if [ -f "$commit_msg_file" ]; then
+        exit 0
+    fi
+fi
+
+branch_name=$(git rev-parse --abbrev-ref HEAD)
+
+# Validate branch name format ((feat|bugfix|hotfix)/1234_XXX-XXX-XXX)
+valid_pattern="^(feat|bugfix|hotfix)/[0-9]{4}_[a-zA-Z]+(-[a-zA-Z]+)*$"
+if ! [[ $branch_name =~ $valid_pattern ]]; then
+    echo "Error: Branch name '$branch_name' doesn't match required pattern"
+    echo "Format should be: (feat|bugfix|hotfix)/1234_XXX-XXX-XXX"
+    echo "Examples:"
+    echo "  feat/1234_feature-add-login"
+    echo "  bugfix/5678_auth-fix-error"
+    echo "  hotfix/9012_crash-quick-fix"
+    exit 1
+fi
+
+commit_msg_file="$1"
+if [ -z "$commit_msg_file" ]; then
+    echo "Error: No commit message file provided"
+    exit 1
+fi
+
+# Read the current message
+original_msg=$(cat "$commit_msg_file")
+
+# Create new message with branch name prefix
+new_msg="($branch_name) $original_msg"
+
+# Write the new message back to the file
+echo "$new_msg" > "$commit_msg_file"
+echo "Updated commit message to: $new_msg"
+
+exit 0
