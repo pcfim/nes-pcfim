@@ -1,9 +1,10 @@
 [package]
-name = "nes-pcfim"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.85.0"
+  name         = "nes-pcfim"
+  version      = "0.1.0"
+  edition      = "2021"
+  rust-version = "1.85.0"
 
 [dependencies]
+  lazy_static = "1.4.0"
 
 [dev-dependencies]
