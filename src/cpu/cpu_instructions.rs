@@ -117,6 +117,17 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_x);
     }
 
+    fn compare(&mut self, mode: &AddressingMode, value_to_compare: u8) {
+        let address = self.get_operand_address(mode);
+        let value: u8 = self.memory.memory[address as usize];
+
+        if value_to_compare >= value {
+            self.status |= 0b0000_00001;
+        }
+
+        self.update_zero_and_negative_flags(value_to_compare.wrapping_sub(value));
+    }
+
     pub fn run(&mut self) {
         let operation_codes: &HashMap<u8, &'static operation_codes::OperationCodes> =
             &operation_codes::OPERATION_CODES_MAP;
@@ -134,6 +145,15 @@ impl CPU {
                 }
                 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
                     self.store_accumulator(&operation_code.addressing_mode);
+                }
+                0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => {
+                    self.compare(&operation_code.addressing_mode, self.register_a);
+                }
+                0xE0 | 0xE4 | 0xEC => {
+                    self.compare(&operation_code.addressing_mode, self.register_x);
+                }
+                0xC0 | 0xC4 | 0xCC => {
+                    self.compare(&operation_code.addressing_mode, self.register_y);
                 }
                 0xAA => self.transfer_accumulator_to_x(),
                 0xE8 => self.increment_x_register(),
