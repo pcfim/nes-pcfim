@@ -35,3 +35,35 @@ impl Memory {
         self.write_u16(0xFFFC, 0x8000);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_write_u16_correct_positions() {
+        let mut memory: Memory = Memory::new();
+
+        let address: u16 = 0x0000;
+        let value: u16 = 0x04D2;
+        let left: u8 = 0x04;
+        let right: u8 = 0xD2;
+
+        memory.write_u16(address, value);
+
+        assert_eq!(left, memory.memory[address as usize + 1]);
+        assert_eq!(right, memory.memory[address as usize]);
+    }
+
+    #[test]
+    fn test_read_write_u16() {
+        let mut memory: Memory = Memory::new();
+
+        let address: u16 = 0x0000;
+        let value: u16 = 0x04D2;
+
+        memory.write_u16(address, value);
+
+        assert_eq!(value, memory.read_u16(address));
+    }
+}
