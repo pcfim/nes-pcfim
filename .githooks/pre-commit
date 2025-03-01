@@ -16,27 +16,4 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-branch_name=$(git rev-parse --abbrev-ref HEAD)
-
-# Validate branch name format ((feat|bugfix|hotfix)/1234_XXX-XXX-XXX)
-valid_pattern="^(feat|bugfix|hotfix)/[0-9]{4}_[a-zA-Z]+(-[a-zA-Z]+)*$"
-if ! [[ $branch_name =~ $valid_pattern ]]; then
-    echo "Error: Branch name '$branch_name' doesn't match required pattern"
-    echo "Format should be: (feat|bugfix|hotfix)/1234_XXX-XXX-XXX"
-    echo "Examples:"
-    echo "  feat/1234_feature-add-login"
-    echo "  bugfix/5678_auth-fix-error"
-    echo "  hotfix/9012_crash-quick-fix"
-    exit 1
-fi
-
-commit_msg_file="$1"
-original_msg=$(cat "$commit_msg_file")
-
-new_msg="($branch_name) $original_msg"
-
-echo "$new_msg" > "$commit_msg_file"
-
-echo "Updated commit message to: $new_msg"
-
 exit 0
