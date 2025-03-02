@@ -43,8 +43,8 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: nes-emulator
-          path: target/release/nes-emulator
+          name: nes-pcfim
+          path: target/release/nes-pcfim
 
   release:
     name: Create Release
@@ -58,7 +58,7 @@ jobs:
       - name: Download built binary
         uses: actions/download-artifact@v4
         with:
-          name: nes-emulator
+          name: nes-pcfim
           path: target/release/
 
       - name: Determine Release Type
@@ -79,7 +79,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.tag_name }}
-          files: target/release/nes-emulator
+          files: target/release/nes-pcfim
           draft: false
           prerelease: ${{ env.is_prerelease }}
         env:
