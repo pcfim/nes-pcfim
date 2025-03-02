@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Check Rust test
+echo "Checking tests"
+cargo test --
+if [ $? -ne 0 ]; then
+    echo "Test check failed! Run 'cargo test' to fix."
+    exit 1
+fi
+
+exit 0
