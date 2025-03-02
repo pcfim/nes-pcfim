@@ -110,10 +110,22 @@ pub fn increment_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
     update_zero_and_negative_flags(cpu, cpu.register_x);
 }
 
-pub fn load_accumulator(cpu: &mut CPU, mode: &AddressingMode) {
+pub fn load_accumulator_a(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
     let value: u8 = cpu.memory.memory[address as usize];
     cpu.register_a = value;
+    update_zero_and_negative_flags(cpu, cpu.register_a);
+}
+pub fn load_accumulator_x(cpu: &mut CPU, mode: &AddressingMode) {
+    let address = get_operand_address(cpu, mode);
+    let value: u8 = cpu.memory.memory[address as usize];
+    cpu.register_x = value;
+    update_zero_and_negative_flags(cpu, cpu.register_a);
+}
+pub fn load_accumulator_y(cpu: &mut CPU, mode: &AddressingMode) {
+    let address = get_operand_address(cpu, mode);
+    let value: u8 = cpu.memory.memory[address as usize];
+    cpu.register_y = value;
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
@@ -145,13 +157,19 @@ mod tests {
     use crate::cpu::memory::Memory;
 
     // Helper function to create a new CPU instance
+    const TEST_BASE_REGISTER_A: u8 = 0x05;
+    const TEST_BASE_REGISTER_X: u8 = 0x0A;
+    const TEST_BASE_REGISTER_Y: u8 = 0x0F;
+    const TEST_BASE_PROGRAM_COUNTER: u16 = 0x2000;
+    const TEST_BASE_STATUS: u8 = 0x00;
+    const SAFE_MEMORY_ADDRESS: u16 = 0x0200;
     fn create_test_cpu() -> CPU {
         CPU {
-            register_a: 0x05,
-            register_x: 0x0A,
-            register_y: 0x0F,
-            status: 0x00,
-            program_counter: 0x2000,
+            register_a: TEST_BASE_REGISTER_A,
+            register_x: TEST_BASE_REGISTER_X,
+            register_y: TEST_BASE_REGISTER_Y,
+            status: TEST_BASE_STATUS,
+            program_counter: TEST_BASE_PROGRAM_COUNTER,
             memory: Memory::new(),
         }
     }
@@ -285,14 +303,12 @@ mod tests {
 
     // Tests for the functions themselves
 
-    const SAFE_MEMORY_ADDRESS: u16 = 0x0200;
-    const TEST_BASE_PROGRAM_COUNTER: u16 = 0x2000;
     #[test]
     fn test_increment_x_register_by_1() {
         let mut cpu: CPU = create_test_cpu();
         let mode: AddressingMode = AddressingMode::Immediate;
         increment_x_register(&mut cpu, &mode);
-        assert_eq!(cpu.register_x, 0x0B);
+        assert_eq!(cpu.register_x, TEST_BASE_REGISTER_X + 1);
     }
 
     #[test]
@@ -300,17 +316,23 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.memory
             .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
-        cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize] = 0xff;
 
-        load_accumulator(&mut cpu, &AddressingMode::Absolute);
-        assert_eq!(cpu.register_a, 0xff);
+        let data_to_load: u8 = 0xff;
+        cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize] = data_to_load;
+
+        load_accumulator_a(&mut cpu, &AddressingMode::Absolute);
+        assert_eq!(cpu.register_a, data_to_load);
+        load_accumulator_x(&mut cpu, &AddressingMode::Absolute);
+        assert_eq!(cpu.register_x, data_to_load);
+        load_accumulator_y(&mut cpu, &AddressingMode::Absolute);
+        assert_eq!(cpu.register_y, data_to_load);
     }
 
     #[test]
     fn test_transfer_accumulator_to_x() {
         let mut cpu: CPU = create_test_cpu();
         transfer_accumulator_to_x(&mut cpu, &AddressingMode::NoneAddressing);
-        assert_eq!(cpu.register_x, 0x05);
+        assert_eq!(cpu.register_x, TEST_BASE_REGISTER_A);
     }
 
     #[test]
@@ -320,7 +342,7 @@ mod tests {
             .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
         store_accumulator(&mut cpu, &AddressingMode::Absolute);
         let value_stored = cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize];
-        assert_eq!(value_stored, 0x05);
+        assert_eq!(value_stored, TEST_BASE_REGISTER_A);
     }
 
     #[test]
@@ -348,10 +370,4 @@ mod tests {
         let status: u8 = cpu.status;
         assert_eq!(status, 0x80);
     }
-
-    // register_a: 0x05,
-    // register_x: 0x0A,
-    // register_y: 0x0F,
-    // status: 0x00,
-    // program_counter: 0x2000
 }
