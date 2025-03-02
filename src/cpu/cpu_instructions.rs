@@ -181,3 +181,133 @@ impl CPU {
         self.run();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper function to create a new CPU instance
+    fn create_test_cpu() -> CPU {
+        CPU {
+            register_a: 0x05,
+            register_x: 0x0A,
+            register_y: 0x0F,
+            status: 0x00,
+            program_counter: 0x2000,
+            memory: Memory::new(),
+        }
+    }
+
+    #[test]
+    fn test_immediate() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let mode: AddressingMode = AddressingMode::Immediate;
+
+        assert_eq!(cpu.get_operand_address(&mode), cpu.program_counter);
+    }
+
+    #[test]
+    fn test_zero_page() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data: u16 = 0x80;
+        cpu.memory.write_u16(cpu.program_counter, data);
+        let mode: AddressingMode = AddressingMode::ZeroPage;
+
+        assert_eq!(cpu.get_operand_address(&mode), data);
+    }
+
+    #[test]
+    fn test_zero_page_x() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data: u16 = 0x80;
+        cpu.memory.write_u16(cpu.program_counter, data);
+        let mode: AddressingMode = AddressingMode::ZeroPage_X;
+
+        assert_eq!(cpu.get_operand_address(&mode), data + cpu.register_x as u16);
+    }
+
+    #[test]
+    fn test_zero_page_y() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data: u16 = 0x80;
+        cpu.memory.write_u16(cpu.program_counter, data);
+
+        let mode = AddressingMode::ZeroPage_Y;
+        assert_eq!(cpu.get_operand_address(&mode), data + cpu.register_y as u16);
+    }
+
+    #[test]
+    fn test_get_operand_address_absolute() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data: u16 = 0xC000;
+        cpu.memory.write_u16(cpu.program_counter, data);
+        let mode = AddressingMode::Absolute;
+
+        assert_eq!(cpu.get_operand_address(&mode), data);
+    }
+
+    #[test]
+    fn test_get_operand_address_absolute_x() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data = 0xC000;
+        cpu.memory.write_u16(cpu.program_counter, data);
+        let mode = AddressingMode::Absolute_X;
+
+        assert_eq!(cpu.get_operand_address(&mode), data + cpu.register_x as u16);
+    }
+
+    #[test]
+    fn test_get_operand_address_absolute_y() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let data = 0xC000;
+        cpu.memory.write_u16(cpu.program_counter, data);
+        let mode = AddressingMode::Absolute_Y;
+
+        assert_eq!(cpu.get_operand_address(&mode), data + cpu.register_y as u16);
+    }
+
+    #[test]
+    fn test_get_operand_address_indirect_x() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let base: u8 = 0x20;
+        let ptr: u8 = base.wrapping_add(cpu.register_x);
+        cpu.memory.memory[cpu.program_counter as usize] = base;
+        cpu.memory.memory[ptr as usize] = 0x34;
+        cpu.memory.memory[ptr.wrapping_add(1) as usize] = 0x12;
+
+        let mode = AddressingMode::Indirect_X;
+        assert_eq!(cpu.get_operand_address(&mode), 0x1234);
+    }
+
+    #[test]
+    fn test_get_operand_address_indirect_y() {
+        let mut cpu: CPU = create_test_cpu();
+
+        let base: u8 = 0x40;
+        cpu.memory.memory[cpu.program_counter as usize] = base;
+        cpu.memory.memory[base as usize] = 0x78;
+        cpu.memory.memory[base.wrapping_add(1) as usize] = 0x56;
+
+        let mode = AddressingMode::Indirect_Y;
+        assert_eq!(
+            cpu.get_operand_address(&mode),
+            0x5678 + cpu.register_y as u16
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_get_operand_address_none_addressing() {
+        let mut cpu: CPU = create_test_cpu();
+        let mode = AddressingMode::NoneAddressing;
+        cpu.get_operand_address(&mode);
+    }
+}
