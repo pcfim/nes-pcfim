@@ -5,26 +5,30 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 pub enum OperationName {
-    ForceInterrupt,
-    TransferAccumulatorToX,
-    TransferAccumulatorToY,
-    LoadAccumulator,
-    LoadAccumulatorX,
-    LoadAccumulatorY,
-    StoreAccumulator,
-    StoreAccumulatorX,
-    StoreAccumulatorY,
-    IncrementMemory,
-    IncrementXRegister,
-    IncrementYRegister,
+    AddWithCarry,
+    Compare,
+    CompareX,
+    CompareY,
     DecrementMemory,
     DecrementXRegister,
     DecrementYRegister,
-    CompareX,
-    CompareY,
-    Compare,
-    AddWithCarry,
+    ForceInterrupt,
+    IncrementMemory,
+    IncrementXRegister,
+    IncrementYRegister,
+    LoadAccumulator,
+    LoadXRegister,
+    LoadYRegister,
     SubstractWithCarry,
+    StoreAccumulator,
+    StoreXRegister,
+    StoreYRegister,
+    TransferAccumulatorToX,
+    TransferAccumulatorToY,
+    TransferStackPointerToX,
+    TransferXToAccumulator,
+    TransferXToStackPointer,
+    TransferYToAccumulator,
 }
 
 pub struct Operation {
@@ -72,12 +76,12 @@ lazy_static! {
         OperationCodes::new(
             OperationName::TransferAccumulatorToX,
             vec![Operation::new(0xaa, 1, 2, AddressingMode::NoneAddressing)],
-            cpu_functions::force_interruptions
+            cpu_functions::transfer_accumulator_to_x
         ),
         OperationCodes::new(
             OperationName::TransferAccumulatorToY,
             vec![Operation::new(0xaa, 1, 2, AddressingMode::NoneAddressing)],
-            cpu_functions::force_interruptions
+            cpu_functions::transfer_accumulator_to_y
         ),
         OperationCodes::new(
             OperationName::IncrementXRegister,
@@ -87,7 +91,7 @@ lazy_static! {
         OperationCodes::new(
             OperationName::IncrementYRegister,
             vec![Operation::new(0xc8, 1, 2, AddressingMode::NoneAddressing)],
-            cpu_functions::force_interruptions
+            cpu_functions::increment_y_register
         ),
         OperationCodes::new(
             OperationName::IncrementMemory,
@@ -97,17 +101,17 @@ lazy_static! {
                 Operation::new(0xee, 3, 6, AddressingMode::Absolute),
                 Operation::new(0xfe, 3, 7, AddressingMode::Absolute_X),
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::increment_memory
         ),
         OperationCodes::new(
             OperationName::DecrementXRegister,
             vec![Operation::new(0xca, 1, 2, AddressingMode::NoneAddressing)],
-            cpu_functions::increment_x_register
+            cpu_functions::decrement_x_register
         ),
         OperationCodes::new(
             OperationName::DecrementYRegister,
             vec![Operation::new(0x88, 1, 2, AddressingMode::NoneAddressing)],
-            cpu_functions::force_interruptions
+            cpu_functions::decrement_y_register
         ),
         OperationCodes::new(
             OperationName::DecrementMemory,
@@ -117,7 +121,7 @@ lazy_static! {
                 Operation::new(0xce, 3, 6, AddressingMode::Absolute),
                 Operation::new(0xde, 3, 7, AddressingMode::Absolute_X),
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::decrement_memory
         ),
         OperationCodes::new(
             OperationName::LoadAccumulator,
@@ -131,10 +135,10 @@ lazy_static! {
                 Operation::new(0xa1, 2, 6, AddressingMode::Indirect_X),
                 Operation::new(0xb1, 2, 5, AddressingMode::Indirect_Y),
             ],
-            cpu_functions::load_accumulator_a
+            cpu_functions::load_accumulator
         ),
         OperationCodes::new(
-            OperationName::LoadAccumulatorX,
+            OperationName::LoadXRegister,
             vec![
                 Operation::new(0xA2, 2, 2, AddressingMode::Immediate),
                 Operation::new(0xA6, 2, 3, AddressingMode::ZeroPage),
@@ -142,10 +146,10 @@ lazy_static! {
                 Operation::new(0xAE, 3, 4, AddressingMode::Absolute),
                 Operation::new(0xBE, 3, 4, AddressingMode::Absolute_Y),
             ],
-            cpu_functions::load_accumulator_x
+            cpu_functions::load_x_register
         ),
         OperationCodes::new(
-            OperationName::LoadAccumulatorY,
+            OperationName::LoadYRegister,
             vec![
                 Operation::new(0xA0, 2, 2, AddressingMode::Immediate),
                 Operation::new(0xA4, 2, 3, AddressingMode::ZeroPage),
@@ -153,7 +157,7 @@ lazy_static! {
                 Operation::new(0xAC, 3, 4, AddressingMode::Absolute),
                 Operation::new(0xBC, 3, 4, AddressingMode::Absolute_X),
             ],
-            cpu_functions::load_accumulator_y
+            cpu_functions::load_y_register
         ),
         OperationCodes::new(
             OperationName::StoreAccumulator,
@@ -169,22 +173,22 @@ lazy_static! {
             cpu_functions::store_accumulator
         ),
         OperationCodes::new(
-            OperationName::StoreAccumulatorX,
+            OperationName::StoreXRegister,
             vec![
                 Operation::new(0x86, 2, 3, AddressingMode::ZeroPage),
                 Operation::new(0x96, 2, 4, AddressingMode::ZeroPage_Y),
                 Operation::new(0x8e, 3, 4, AddressingMode::Absolute),
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::store_x_register
         ),
         OperationCodes::new(
-            OperationName::StoreAccumulatorY,
+            OperationName::StoreYRegister,
             vec![
                 Operation::new(0x84, 2, 3, AddressingMode::ZeroPage),
                 Operation::new(0x94, 2, 4, AddressingMode::ZeroPage_X),
                 Operation::new(0x8c, 3, 4, AddressingMode::Absolute),
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::store_y_register
         ),
         OperationCodes::new(
             OperationName::Compare,
@@ -230,7 +234,7 @@ lazy_static! {
                 Operation::new(0x61, 2, 6, AddressingMode::Indirect_X),
                 Operation::new(0x71, 2, 5, AddressingMode::Indirect_Y)
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::add_with_carry
         ),
         OperationCodes::new(
             OperationName::SubstractWithCarry,
@@ -244,22 +248,28 @@ lazy_static! {
                 Operation::new(0xe1, 2, 6, AddressingMode::Indirect_X),
                 Operation::new(0xf1, 2, 5, AddressingMode::Indirect_Y),
             ],
-            cpu_functions::force_interruptions
+            cpu_functions::substract_with_carry
         ),
         OperationCodes::new(
-            OperationName::SubstractWithCarry,
-            vec![
-                Operation::new(0xe9, 2, 2, AddressingMode::Immediate),
-                Operation::new(0xe5, 2, 3, AddressingMode::ZeroPage),
-                Operation::new(0xf5, 2, 4, AddressingMode::ZeroPage_X),
-                Operation::new(0xed, 3, 4, AddressingMode::Absolute),
-                Operation::new(0xfd, 3, 4, AddressingMode::Absolute_X),
-                Operation::new(0xf9, 3, 4, AddressingMode::Absolute_Y),
-                Operation::new(0xe1, 2, 6, AddressingMode::Indirect_X),
-                Operation::new(0xf1, 2, 5, AddressingMode::Indirect_Y),
-            ],
-            cpu_functions::force_interruptions
+            OperationName::TransferStackPointerToX,
+            vec![Operation::new(0xba, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_stack_pointer_to_x
         ),
+        OperationCodes::new(
+            OperationName::TransferXToAccumulator,
+            vec![Operation::new(0x8a, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_x_to_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::TransferXToStackPointer,
+            vec![Operation::new(0x9a, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_x_to_stack_pointer
+        ),
+        OperationCodes::new(
+            OperationName::TransferYToAccumulator,
+            vec![Operation::new(0x98, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_y_to_accumulator
+        )
     ];
     pub static ref OPERATION_CODES_MAP: HashMap<u8, (&'static Operation, ExecuteFunction)> = {
         let mut map = HashMap::new();
