@@ -5,6 +5,14 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 pub enum OperationName {
+    BranchIfCarryClear,
+    BranchIfCarrySet,
+    BranchIfEqual,
+    BranchIfMinus,
+    BranchIfNotEqual,
+    BranchIfPositive,
+    BranchIfOverflowClear,
+    BranchIfOverflowSet,
     ForceInterrupt,
     TransferAccumulatorToX,
     LoadAccumulator,
@@ -52,6 +60,46 @@ impl OperationCodes {
 
 lazy_static! {
     pub static ref CPU_OPS_CODES: Vec<OperationCodes> = vec![
+        OperationCodes::new(
+            OperationName::BranchIfCarryClear,
+            vec![Operation::new(0x90, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_carry_clear
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfCarrySet,
+            vec![Operation::new(0xb0, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_carry_set
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfEqual,
+            vec![Operation::new(0xf0, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_equal
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfMinus,
+            vec![Operation::new(0x30, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_minus
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfNotEqual,
+            vec![Operation::new(0xd0, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_not_equal
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfPositive,
+            vec![Operation::new(0x10, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_positive
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfOverflowClear,
+            vec![Operation::new(0x50, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_overflow_clear
+        ),
+        OperationCodes::new(
+            OperationName::BranchIfOverflowSet,
+            vec![Operation::new(0x70, 2, 2, AddressingMode::Relative),],
+            cpu_functions::branch_if_overflow_set
+        ),
         OperationCodes::new(
             OperationName::ForceInterrupt,
             vec![Operation::new(0x00, 1, 7, AddressingMode::NoneAddressing),],
