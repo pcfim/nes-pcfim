@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use std::collections::HashMap;
 
 pub enum OperationName {
+    AddWithCarry,
     BranchIfCarryClear,
     BranchIfCarrySet,
     BranchIfEqual,
@@ -13,14 +14,29 @@ pub enum OperationName {
     BranchIfPositive,
     BranchIfOverflowClear,
     BranchIfOverflowSet,
-    ForceInterrupt,
-    TransferAccumulatorToX,
-    LoadAccumulator,
-    StoreAccumulator,
-    IncrementXRegister,
+    Compare,
     CompareX,
     CompareY,
-    Compare,
+    DecrementMemory,
+    DecrementXRegister,
+    DecrementYRegister,
+    ForceInterrupt,
+    IncrementMemory,
+    IncrementXRegister,
+    IncrementYRegister,
+    LoadAccumulator,
+    LoadXRegister,
+    LoadYRegister,
+    SubstractWithCarry,
+    StoreAccumulator,
+    StoreXRegister,
+    StoreYRegister,
+    TransferAccumulatorToX,
+    TransferAccumulatorToY,
+    TransferStackPointerToX,
+    TransferXToAccumulator,
+    TransferXToStackPointer,
+    TransferYToAccumulator,
 }
 
 pub struct Operation {
@@ -111,9 +127,49 @@ lazy_static! {
             cpu_functions::transfer_accumulator_to_x
         ),
         OperationCodes::new(
+            OperationName::TransferAccumulatorToY,
+            vec![Operation::new(0xaa, 1, 2, AddressingMode::NoneAddressing)],
+            cpu_functions::transfer_accumulator_to_y
+        ),
+        OperationCodes::new(
             OperationName::IncrementXRegister,
             vec![Operation::new(0xe8, 1, 2, AddressingMode::NoneAddressing)],
             cpu_functions::increment_x_register
+        ),
+        OperationCodes::new(
+            OperationName::IncrementYRegister,
+            vec![Operation::new(0xc8, 1, 2, AddressingMode::NoneAddressing)],
+            cpu_functions::increment_y_register
+        ),
+        OperationCodes::new(
+            OperationName::IncrementMemory,
+            vec![
+                Operation::new(0xe6, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0xf6, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0xee, 3, 6, AddressingMode::Absolute),
+                Operation::new(0xfe, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::increment_memory
+        ),
+        OperationCodes::new(
+            OperationName::DecrementXRegister,
+            vec![Operation::new(0xca, 1, 2, AddressingMode::NoneAddressing)],
+            cpu_functions::decrement_x_register
+        ),
+        OperationCodes::new(
+            OperationName::DecrementYRegister,
+            vec![Operation::new(0x88, 1, 2, AddressingMode::NoneAddressing)],
+            cpu_functions::decrement_y_register
+        ),
+        OperationCodes::new(
+            OperationName::DecrementMemory,
+            vec![
+                Operation::new(0xc6, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0xd6, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0xce, 3, 6, AddressingMode::Absolute),
+                Operation::new(0xde, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::decrement_memory
         ),
         OperationCodes::new(
             OperationName::LoadAccumulator,
@@ -130,6 +186,28 @@ lazy_static! {
             cpu_functions::load_accumulator
         ),
         OperationCodes::new(
+            OperationName::LoadXRegister,
+            vec![
+                Operation::new(0xA2, 2, 2, AddressingMode::Immediate),
+                Operation::new(0xA6, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0xB6, 2, 4, AddressingMode::ZeroPage_Y),
+                Operation::new(0xAE, 3, 4, AddressingMode::Absolute),
+                Operation::new(0xBE, 3, 4, AddressingMode::Absolute_Y),
+            ],
+            cpu_functions::load_x_register
+        ),
+        OperationCodes::new(
+            OperationName::LoadYRegister,
+            vec![
+                Operation::new(0xA0, 2, 2, AddressingMode::Immediate),
+                Operation::new(0xA4, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0xB4, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0xAC, 3, 4, AddressingMode::Absolute),
+                Operation::new(0xBC, 3, 4, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::load_y_register
+        ),
+        OperationCodes::new(
             OperationName::StoreAccumulator,
             vec![
                 Operation::new(0x85, 2, 3, AddressingMode::ZeroPage),
@@ -141,6 +219,24 @@ lazy_static! {
                 Operation::new(0x91, 2, 6, AddressingMode::Indirect_Y),
             ],
             cpu_functions::store_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::StoreXRegister,
+            vec![
+                Operation::new(0x86, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x96, 2, 4, AddressingMode::ZeroPage_Y),
+                Operation::new(0x8e, 3, 4, AddressingMode::Absolute),
+            ],
+            cpu_functions::store_x_register
+        ),
+        OperationCodes::new(
+            OperationName::StoreYRegister,
+            vec![
+                Operation::new(0x84, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x94, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0x8c, 3, 4, AddressingMode::Absolute),
+            ],
+            cpu_functions::store_y_register
         ),
         OperationCodes::new(
             OperationName::Compare,
@@ -173,6 +269,54 @@ lazy_static! {
                 Operation::new(0xCC, 3, 4, AddressingMode::Absolute)
             ],
             cpu_functions::compare_y
+        ),
+        OperationCodes::new(
+            OperationName::AddWithCarry,
+            vec![
+                Operation::new(0x69, 2, 2, AddressingMode::Immediate),
+                Operation::new(0x65, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x75, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0x6d, 3, 4, AddressingMode::Absolute),
+                Operation::new(0x7d, 3, 4, AddressingMode::Absolute_X),
+                Operation::new(0x79, 3, 4, AddressingMode::Absolute_Y),
+                Operation::new(0x61, 2, 6, AddressingMode::Indirect_X),
+                Operation::new(0x71, 2, 5, AddressingMode::Indirect_Y)
+            ],
+            cpu_functions::add_with_carry
+        ),
+        OperationCodes::new(
+            OperationName::SubstractWithCarry,
+            vec![
+                Operation::new(0xe9, 2, 2, AddressingMode::Immediate),
+                Operation::new(0xe5, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0xf5, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0xed, 3, 4, AddressingMode::Absolute),
+                Operation::new(0xfd, 3, 4, AddressingMode::Absolute_X),
+                Operation::new(0xf9, 3, 4, AddressingMode::Absolute_Y),
+                Operation::new(0xe1, 2, 6, AddressingMode::Indirect_X),
+                Operation::new(0xf1, 2, 5, AddressingMode::Indirect_Y),
+            ],
+            cpu_functions::substract_with_carry
+        ),
+        OperationCodes::new(
+            OperationName::TransferStackPointerToX,
+            vec![Operation::new(0xba, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_stack_pointer_to_x
+        ),
+        OperationCodes::new(
+            OperationName::TransferXToAccumulator,
+            vec![Operation::new(0x8a, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_x_to_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::TransferXToStackPointer,
+            vec![Operation::new(0x9a, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_x_to_stack_pointer
+        ),
+        OperationCodes::new(
+            OperationName::TransferYToAccumulator,
+            vec![Operation::new(0x98, 1, 2, AddressingMode::NoneAddressing),],
+            cpu_functions::transfer_y_to_accumulator
         )
     ];
     pub static ref OPERATION_CODES_MAP: HashMap<u8, (&'static Operation, ExecuteFunction)> = {

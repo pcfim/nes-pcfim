@@ -1,6 +1,7 @@
 use super::operation_codes;
 use crate::cpu::cpu_model::ExecuteFunction;
 use crate::cpu::cpu_model::CPU;
+use crate::cpu::cpu_model::STACK_RESET;
 use crate::cpu::memory::Memory;
 use std::collections::HashMap;
 
@@ -17,6 +18,7 @@ impl CPU {
             register_x: 0,
             register_y: 0,
             status: 0,
+            stack_pointer: STACK_RESET,
             program_counter: 0,
             memory: Memory::new(),
         }

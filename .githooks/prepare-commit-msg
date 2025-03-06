@@ -36,7 +36,7 @@ fi
 original_msg=$(cat "$commit_msg_file")
 
 # Create new message with branch name prefix
-new_msg="($branch_name) $original_msg"
+new_msg="$original_msg"
 
 # Write the new message back to the file
 echo "$new_msg" > "$commit_msg_file"
