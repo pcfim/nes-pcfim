@@ -156,43 +156,59 @@ pub fn decrement_y_register(cpu: &mut CPU, _mode: &AddressingMode) {
     update_zero_and_negative_flags(cpu, cpu.register_y);
 }
 
-fn branch(cpu: &mut CPU, condition: bool) {
+fn branch(cpu: &mut CPU, mode: &AddressingMode, condition: bool) {
     if condition {
-        let offset = cpu.memory.memory[cpu.program_counter as usize] as i8;
-        cpu.program_counter = cpu.program_counter.wrapping_add(offset as u16);
+        let target_address = get_operand_address(cpu, mode);
+        cpu.program_counter = target_address;
     }
 }
 
-pub fn branch_if_carry_clear(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Carry as u8)) == 0);
+pub fn branch_if_carry_clear(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Carry as u8)) == 0);
 }
 
-pub fn branch_if_carry_set(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Carry as u8)) != 0);
+pub fn branch_if_carry_set(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Carry as u8)) != 0);
 }
 
-pub fn branch_if_equal(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Zero as u8)) != 0);
+pub fn branch_if_equal(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Zero as u8)) != 0);
 }
 
-pub fn branch_if_minus(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Negative as u8)) != 0);
+pub fn branch_if_minus(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Negative as u8)) != 0,
+    );
 }
 
-pub fn branch_if_not_equal(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Zero as u8)) == 0);
+pub fn branch_if_not_equal(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Zero as u8)) == 0);
 }
 
-pub fn branch_if_positive(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Negative as u8)) == 0);
+pub fn branch_if_positive(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Negative as u8)) == 0,
+    );
 }
 
-pub fn branch_if_overflow_clear(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Overflow as u8)) == 0);
+pub fn branch_if_overflow_clear(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Overflow as u8)) == 0,
+    );
 }
 
-pub fn branch_if_overflow_set(cpu: &mut CPU, _mode: &AddressingMode) {
-    branch(cpu, cpu.status & (1 << (StatusBit::Overflow as u8)) != 0);
+pub fn branch_if_overflow_set(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Overflow as u8)) != 0,
+    );
 }
 
 pub fn load_accumulator(cpu: &mut CPU, mode: &AddressingMode) {
@@ -364,8 +380,7 @@ mod tests {
         cpu.program_counter = 0x2000;
         cpu.memory.memory[cpu.program_counter as usize] = 0x05;
         let mode: AddressingMode = AddressingMode::Relative;
-        let effective_address: u16 = cpu_functions::get_operand_address(&mut cpu, &mode);
-        assert_eq!(effective_address, 0x2006);
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x2006);
     }
 
     #[test]
@@ -374,8 +389,7 @@ mod tests {
         cpu.program_counter = 0x2000;
         cpu.memory.memory[cpu.program_counter as usize] = 0xFB;
         let mode: AddressingMode = AddressingMode::Relative;
-        let effective_address: u16 = cpu_functions::get_operand_address(&mut cpu, &mode);
-        assert_eq!(effective_address, 0x1FFC);
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x1FFC);
     }
 
     #[test]
@@ -695,7 +709,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_carry_clear(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -717,7 +734,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_carry_set(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -739,7 +759,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_equal(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -761,7 +784,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_minus(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -783,7 +809,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_not_equal(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -805,7 +834,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_positive(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -827,7 +859,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_overflow_clear(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
@@ -849,7 +884,10 @@ mod tests {
         cpu.program_counter = 0x1000;
         cpu.memory.memory[cpu.program_counter as usize] = 5;
         cpu_functions::branch_if_overflow_set(&mut cpu, &AddressingMode::Relative);
-        assert_eq!(cpu.program_counter, 0x1000u16.wrapping_add(5));
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
     }
 
     #[test]
