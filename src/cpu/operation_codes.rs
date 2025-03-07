@@ -19,6 +19,8 @@ pub enum OperationName {
     LoadAccumulator,
     LoadXRegister,
     LoadYRegister,
+    ReturnFromInterrupt,
+    ReturnFromSubroutine,
     SubstractWithCarry,
     StoreAccumulator,
     StoreXRegister,
@@ -158,6 +160,16 @@ lazy_static! {
                 Operation::new(0xBC, 3, 4, AddressingMode::Absolute_X),
             ],
             cpu_functions::load_y_register
+        ),
+        OperationCodes::new(
+            OperationName::ReturnFromInterrupt,
+            vec![Operation::new(0x40, 1, 6, AddressingMode::Implied),],
+            cpu_functions::return_from_interrupt
+        ),
+        OperationCodes::new(
+            OperationName::ReturnFromSubroutine,
+            vec![Operation::new(0x60, 1, 6, AddressingMode::Implied),],
+            cpu_functions::return_from_subroutine
         ),
         OperationCodes::new(
             OperationName::StoreAccumulator,

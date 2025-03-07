@@ -22,6 +22,8 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
     match mode {
         AddressingMode::Immediate => cpu.program_counter,
 
+        AddressingMode::Implied => cpu.program_counter, // TODO: Fix
+
         AddressingMode::ZeroPage => cpu.memory.memory[cpu.program_counter as usize] as u16,
 
         AddressingMode::Absolute => cpu.memory.read_u16(cpu.program_counter),
@@ -232,6 +234,22 @@ pub fn transfer_y_to_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn transfer_x_to_stack_pointer(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.register_x;
+}
+
+pub fn return_from_interrupt(cpu: &mut CPU, _mode: &AddressingMode) {
+    // TODO: Fix
+    let lo = cpu.memory.read_u16(cpu.stack_pointer as u16 + 1);
+    let hi = cpu.memory.read_u16(cpu.stack_pointer as u16 + 2);
+    cpu.program_counter = ((hi as u16) << 8) | (lo as u16);
+    cpu.stack_pointer += 3;
+}
+
+pub fn return_from_subroutine(cpu: &mut CPU, _mode: &AddressingMode) {
+    // TODO: Fix
+    let lo = cpu.memory.read_u16(cpu.stack_pointer as u16 + 1);
+    let hi = cpu.memory.read_u16(cpu.stack_pointer as u16 + 2);
+    cpu.program_counter = ((hi as u16) << 8) | (lo as u16);
+    cpu.stack_pointer += 2;
 }
 
 pub fn force_interruptions(_cpu: &mut CPU, _mode: &AddressingMode) {}
