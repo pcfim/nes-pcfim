@@ -73,7 +73,10 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
             let deref_base = ((hi as u16) << 8) | (lo as u16);
             deref_base.wrapping_add(cpu.register_y as u16)
         }
-
+        AddressingMode::Relative => {
+            let offset = cpu.memory.memory[cpu.program_counter as usize] as i8;
+            (cpu.program_counter.wrapping_add(1) as i16 + offset as i16) as u16
+        }
         AddressingMode::NoneAddressing => {
             panic!("mode {:?} is not supported", mode);
         }
@@ -181,6 +184,61 @@ pub fn decrement_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
 pub fn decrement_y_register(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.register_y = cpu.register_y.wrapping_sub(1);
     update_zero_and_negative_flags(cpu, cpu.register_y);
+}
+
+fn branch(cpu: &mut CPU, mode: &AddressingMode, condition: bool) {
+    if condition {
+        let target_address = get_operand_address(cpu, mode);
+        cpu.program_counter = target_address;
+    }
+}
+
+pub fn branch_if_carry_clear(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Carry as u8)) == 0);
+}
+
+pub fn branch_if_carry_set(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Carry as u8)) != 0);
+}
+
+pub fn branch_if_equal(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Zero as u8)) != 0);
+}
+
+pub fn branch_if_minus(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Negative as u8)) != 0,
+    );
+}
+
+pub fn branch_if_not_equal(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(cpu, mode, cpu.status & (1 << (StatusBit::Zero as u8)) == 0);
+}
+
+pub fn branch_if_positive(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Negative as u8)) == 0,
+    );
+}
+
+pub fn branch_if_overflow_clear(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Overflow as u8)) == 0,
+    );
+}
+
+pub fn branch_if_overflow_set(cpu: &mut CPU, mode: &AddressingMode) {
+    branch(
+        cpu,
+        mode,
+        cpu.status & (1 << (StatusBit::Overflow as u8)) != 0,
+    );
 }
 
 pub fn load_accumulator(cpu: &mut CPU, mode: &AddressingMode) {
@@ -344,6 +402,24 @@ mod tests {
             cpu_functions::get_operand_address(&mut cpu, &mode),
             data + cpu.register_y as u16
         );
+    }
+
+    #[test]
+    fn test_get_operand_address_relative_positive() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.program_counter = 0x2000;
+        cpu.memory.memory[cpu.program_counter as usize] = 0x05;
+        let mode: AddressingMode = AddressingMode::Relative;
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x2006);
+    }
+
+    #[test]
+    fn test_get_operand_address_relative_negative() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.program_counter = 0x2000;
+        cpu.memory.memory[cpu.program_counter as usize] = 0xFB;
+        let mode: AddressingMode = AddressingMode::Relative;
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x1FFC);
     }
 
     #[test]
@@ -770,6 +846,207 @@ mod tests {
         ];
         lst
     }
+
+    // --- Tests for branch_if_carry_clear ---
+
+    #[test]
+    fn test_branch_if_carry_clear_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_carry_clear(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_carry_clear_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x01;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_carry_clear(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_carry_set ---
+
+    #[test]
+    fn test_branch_if_carry_set_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x01;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_carry_set(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_carry_set_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_carry_set(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_equal ---
+
+    #[test]
+    fn test_branch_if_equal_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x02;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_equal(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_equal_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_equal(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_minus ---
+
+    #[test]
+    fn test_branch_if_minus_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x80;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_minus(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_minus_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_minus(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_not_equal ---
+
+    #[test]
+    fn test_branch_if_not_equal_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_not_equal(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_not_equal_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x02;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_not_equal(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_positive ---
+
+    #[test]
+    fn test_branch_if_positive_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_positive(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_positive_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x80;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_positive(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_overflow_clear ---
+
+    #[test]
+    fn test_branch_if_overflow_clear_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_overflow_clear(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_overflow_clear_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x40;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_overflow_clear(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
+    // --- Tests for branch_if_overflow_set ---
+
+    #[test]
+    fn test_branch_if_overflow_set_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x40;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_overflow_set(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(
+            cpu.program_counter,
+            0x1000u16.wrapping_add(1).wrapping_add(5)
+        );
+    }
+
+    #[test]
+    fn test_branch_if_overflow_set_not_taken() {
+        let mut cpu: CPU = create_test_cpu();
+        cpu.status = 0x00;
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu_functions::branch_if_overflow_set(&mut cpu, &AddressingMode::Relative);
+        assert_eq!(cpu.program_counter, 0x1000);
+    }
+
     #[test]
     fn testing_add_with_carry() {
         for testing_parameters in generate_tests_add_with_carry() {
