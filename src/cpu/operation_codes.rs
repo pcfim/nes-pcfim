@@ -24,6 +24,8 @@ pub enum OperationName {
     IncrementMemory,
     IncrementXRegister,
     IncrementYRegister,
+    Jump,
+    JumpToSubroutine,
     LoadAccumulator,
     LoadXRegister,
     LoadYRegister,
@@ -150,6 +152,19 @@ lazy_static! {
                 Operation::new(0xfe, 3, 7, AddressingMode::Absolute_X),
             ],
             cpu_functions::increment_memory
+        ),
+        OperationCodes::new(
+            OperationName::Jump,
+            vec![
+                Operation::new(0x4c, 3, 3, AddressingMode::Absolute),
+                Operation::new(0x6c, 3, 5, AddressingMode::Indirect),
+            ],
+            cpu_functions::jump
+        ),
+        OperationCodes::new(
+            OperationName::JumpToSubroutine,
+            vec![Operation::new(0x20, 3, 6, AddressingMode::Absolute),],
+            cpu_functions::jump_to_subroutine
         ),
         OperationCodes::new(
             OperationName::DecrementXRegister,

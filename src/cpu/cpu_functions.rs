@@ -44,6 +44,19 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
             base.wrapping_add(cpu.register_y as u16)
         }
 
+        AddressingMode::Indirect => {
+            let base = cpu.memory.read_u16(cpu.program_counter);
+            let lo = cpu.memory.memory[base as usize];
+            let hi_addr = if (base & 0xFF) == 0xFF {
+                // Bug: Wrap around within the same page instead of crossing page boundary
+                (base & 0xFF00) | ((base + 1) & 0xFF)
+            } else {
+                // Normal case: Fetch from the next sequential address
+                base.wrapping_add(1)
+            };
+            let hi: u8 = cpu.memory.memory[hi_addr as usize];
+            ((hi as u16) << 8) | (lo as u16)
+        }
         AddressingMode::Indirect_X => {
             let base = cpu.memory.memory[cpu.program_counter as usize];
 
@@ -141,6 +154,23 @@ pub fn increment_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
 pub fn increment_y_register(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.register_y = cpu.register_y.wrapping_add(1);
     update_zero_and_negative_flags(cpu, cpu.register_y);
+}
+
+pub fn jump(cpu: &mut CPU, mode: &AddressingMode) {
+    let address = get_operand_address(cpu, mode);
+    cpu.program_counter = address;
+}
+
+pub fn jump_to_subroutine(cpu: &mut CPU, mode: &AddressingMode) {
+    let address: u16 = get_operand_address(cpu, mode);
+    let return_address: u16 = cpu.program_counter + 1;
+    let high: u8 = (return_address >> 8) as u8;
+    let low: u8 = (return_address & 0xFF) as u8;
+    cpu.memory.memory[(0x0100 + cpu.stack_pointer as u16) as usize] = high;
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
+    cpu.memory.memory[(0x0100 + cpu.stack_pointer as u16) as usize] = low;
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
+    cpu.program_counter = address;
 }
 
 pub fn decrement_memory(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -502,6 +532,123 @@ mod tests {
             increment_y_register(&mut cpu, &mode);
         }
         assert_eq!(cpu.register_y, TEST_BASE_REGISTER_Y.wrapping_add(AMOUNT));
+    }
+
+    #[test]
+    fn test_jump_absolute_normal() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x1000;
+        cpu.memory.memory[0x1000] = 0x34;
+        cpu.memory.memory[0x1001] = 0x12;
+
+        jump(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0x1234);
+    }
+
+    #[test]
+    fn test_jump_absolute_max_address() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x2000;
+        cpu.memory.memory[0x2000] = 0xFF;
+        cpu.memory.memory[0x2001] = 0xFF;
+
+        jump(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0xFFFF);
+    }
+
+    #[test]
+    fn test_jump_indirect_normal() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x3000;
+        cpu.memory.memory[0x3000] = 0x50;
+        cpu.memory.memory[0x3001] = 0x40;
+        cpu.memory.memory[0x4050] = 0x78;
+        cpu.memory.memory[0x4051] = 0x56;
+
+        jump(&mut cpu, &AddressingMode::Indirect);
+
+        assert_eq!(cpu.program_counter, 0x5678);
+    }
+
+    #[test]
+    fn test_jump_indirect_page_boundary_bug() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x4000;
+        cpu.memory.memory[0x4000] = 0xFF;
+        cpu.memory.memory[0x4001] = 0x01;
+        cpu.memory.memory[0x01FF] = 0xCD;
+        cpu.memory.memory[0x0200] = 0xAB;
+        cpu.memory.memory[0x0100] = 0xEF;
+
+        jump(&mut cpu, &AddressingMode::Indirect);
+
+        assert_eq!(cpu.program_counter, 0xEFCD);
+    }
+
+    #[test]
+    fn test_jump_to_subroutine_normal() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x1001;
+        cpu.stack_pointer = 0xFF;
+        cpu.memory.memory[0x1001] = 0x34;
+        cpu.memory.memory[0x1002] = 0x12;
+
+        jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0x1234);
+        assert_eq!(cpu.stack_pointer, 0xFD);
+        assert_eq!(cpu.memory.memory[0x01FF], 0x10);
+        assert_eq!(cpu.memory.memory[0x01FE], 0x02);
+    }
+
+    #[test]
+    fn test_jump_to_subroutine_stack_wrap() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x2000;
+        cpu.stack_pointer = 0x01;
+        cpu.memory.memory[0x2000] = 0x56;
+        cpu.memory.memory[0x2001] = 0x34;
+
+        jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0x3456);
+        assert_eq!(cpu.stack_pointer, 0xFF);
+        assert_eq!(cpu.memory.memory[0x0101], 0x20);
+        assert_eq!(cpu.memory.memory[0x0100], 0x01);
+    }
+
+    #[test]
+    fn test_jump_to_subroutine_target_zero() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x3000;
+        cpu.stack_pointer = 0xFF;
+        cpu.memory.memory[0x3000] = 0x00;
+        cpu.memory.memory[0x3001] = 0x00;
+
+        jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0x0000);
+        assert_eq!(cpu.stack_pointer, 0xFD);
+        assert_eq!(cpu.memory.memory[0x01FF], 0x30);
+        assert_eq!(cpu.memory.memory[0x01FE], 0x01);
+    }
+
+    #[test]
+    fn test_jump_to_subroutine_target_max() {
+        let mut cpu = CPU::new();
+        cpu.program_counter = 0x4000;
+        cpu.stack_pointer = 0xFF;
+        cpu.memory.memory[0x4000] = 0xFF;
+        cpu.memory.memory[0x4001] = 0xFF;
+
+        jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
+
+        assert_eq!(cpu.program_counter, 0xFFFF);
+        assert_eq!(cpu.stack_pointer, 0xFD);
+        assert_eq!(cpu.memory.memory[0x01FF], 0x40);
+        assert_eq!(cpu.memory.memory[0x01FE], 0x01);
     }
 
     #[test]
