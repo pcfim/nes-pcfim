@@ -7,7 +7,7 @@ pub enum BitwiseOperation {
 }
 
 impl BitwiseOperation {
-    pub fn from_u8(value: bool) -> Self {
+    pub fn from_bool(value: bool) -> Self {
         if value {
             BitwiseOperation::Set
         } else {

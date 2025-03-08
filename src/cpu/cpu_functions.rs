@@ -355,7 +355,11 @@ pub fn arithmetic_shift_left(cpu: &mut CPU, _mode: &AddressingMode) {
     value <<= 1;
     cpu.memory.memory[address as usize] = value;
     update_zero_and_negative_flags(cpu, value);
-    update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::from_u8(carry == 1));
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
 }
 
 pub fn bit_test(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -363,16 +367,20 @@ pub fn bit_test(cpu: &mut CPU, _mode: &AddressingMode) {
     let value = cpu.memory.memory[address as usize];
     let result = cpu.register_a & value;
 
-    update_status_bit(cpu, StatusBit::Zero, BitwiseOperation::from_u8(result == 0));
+    update_status_bit(
+        cpu,
+        StatusBit::Zero,
+        BitwiseOperation::from_bool(result == 0),
+    );
     update_status_bit(
         cpu,
         StatusBit::Overflow,
-        BitwiseOperation::from_u8((value >> 6) & 1 == 1),
+        BitwiseOperation::from_bool((value >> 6) & 1 == 1),
     );
     update_status_bit(
         cpu,
         StatusBit::Negative,
-        BitwiseOperation::from_u8((value >> 7) & 1 == 1),
+        BitwiseOperation::from_bool((value >> 7) & 1 == 1),
     );
 }
 
@@ -420,7 +428,11 @@ pub fn logical_shift_right(cpu: &mut CPU, _mode: &AddressingMode) {
     value >>= 1;
     cpu.memory.memory[address as usize] = value;
     update_zero_and_negative_flags(cpu, value);
-    update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::from_u8(carry == 1));
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
 }
 
 pub fn pull_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -456,7 +468,11 @@ pub fn rotate_left(cpu: &mut CPU, _mode: &AddressingMode) {
     value |= carry;
     cpu.memory.memory[address as usize] = value;
     update_zero_and_negative_flags(cpu, value);
-    update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::from_u8(carry == 1));
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
 }
 
 pub fn rotate_right(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -467,7 +483,11 @@ pub fn rotate_right(cpu: &mut CPU, _mode: &AddressingMode) {
     value |= carry << 7;
     cpu.memory.memory[address as usize] = value;
     update_zero_and_negative_flags(cpu, value);
-    update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::from_u8(carry == 1));
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
 }
 
 pub fn set_carry_flag(cpu: &mut CPU, _mode: &AddressingMode) {
