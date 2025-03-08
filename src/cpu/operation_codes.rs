@@ -6,20 +6,27 @@ use std::collections::HashMap;
 
 pub enum OperationName {
     AddWithCarry,
+    ArithmeticShiftLeft,
+    BitTest,
     BranchIfCarryClear,
     BranchIfCarrySet,
     BranchIfEqual,
     BranchIfMinus,
     BranchIfNotEqual,
-    BranchIfPositive,
     BranchIfOverflowClear,
     BranchIfOverflowSet,
+    BranchIfPositive,
+    ClearCarryFlag,
+    ClearDecimalMode,
+    ClearInterruptDisable,
+    ClearOverflowFlag,
     Compare,
     CompareX,
     CompareY,
     DecrementMemory,
     DecrementXRegister,
     DecrementYRegister,
+    ExclusiveOR,
     ForceInterrupt,
     IncrementMemory,
     IncrementXRegister,
@@ -29,12 +36,24 @@ pub enum OperationName {
     LoadAccumulator,
     LoadXRegister,
     LoadYRegister,
+    LogicalAND,
+    LogicalInclusiveOR,
+    LogicalShiftRight,
+    PullAccumulator,
+    PullProcessorStatus,
+    PushAccumulator,
+    PushProcessorStatus,
     ReturnFromInterrupt,
     ReturnFromSubroutine,
-    SubstractWithCarry,
+    RotateLeft,
+    RotateRight,
+    SetCarryFlag,
+    SetDecimalFlag,
+    SetInterruptDisable,
     StoreAccumulator,
     StoreXRegister,
     StoreYRegister,
+    SubstractWithCarry,
     TransferAccumulatorToX,
     TransferAccumulatorToY,
     TransferStackPointerToX,
@@ -344,6 +363,155 @@ lazy_static! {
             OperationName::TransferYToAccumulator,
             vec![Operation::new(0x98, 1, 2, AddressingMode::NoneAddressing),],
             cpu_functions::transfer_y_to_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::ArithmeticShiftLeft,
+            vec![
+                Operation::new(0x0a, 1, 2, AddressingMode::Accumulator),
+                Operation::new(0x06, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0x16, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0x0e, 3, 6, AddressingMode::Absolute),
+                Operation::new(0x1e, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::arithmetic_shift_left
+        ),
+        OperationCodes::new(
+            OperationName::BitTest,
+            vec![
+                Operation::new(0x24, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x2c, 3, 4, AddressingMode::Absolute),
+            ],
+            cpu_functions::bit_test
+        ),
+        OperationCodes::new(
+            OperationName::ClearCarryFlag,
+            vec![Operation::new(0x18, 1, 2, AddressingMode::Implied),],
+            cpu_functions::clear_carry_flag
+        ),
+        OperationCodes::new(
+            OperationName::ClearDecimalMode,
+            vec![Operation::new(0xd8, 1, 2, AddressingMode::Implied),],
+            cpu_functions::clear_decimal_mode
+        ),
+        OperationCodes::new(
+            OperationName::ClearInterruptDisable,
+            vec![Operation::new(0x58, 1, 2, AddressingMode::Implied),],
+            cpu_functions::clear_interrupt_disable
+        ),
+        OperationCodes::new(
+            OperationName::ClearOverflowFlag,
+            vec![Operation::new(0xb8, 1, 2, AddressingMode::Implied),],
+            cpu_functions::clear_overflow_flag
+        ),
+        OperationCodes::new(
+            OperationName::ExclusiveOR,
+            vec![
+                Operation::new(0x49, 2, 2, AddressingMode::Immediate),
+                Operation::new(0x45, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x55, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0x4d, 3, 4, AddressingMode::Absolute),
+                Operation::new(0x5d, 3, 4, AddressingMode::Absolute_X),
+                Operation::new(0x59, 3, 4, AddressingMode::Absolute_Y),
+                Operation::new(0x41, 2, 6, AddressingMode::Indirect_X),
+                Operation::new(0x51, 2, 5, AddressingMode::Indirect_Y),
+            ],
+            cpu_functions::exclusive_or
+        ),
+        OperationCodes::new(
+            OperationName::LogicalAND,
+            vec![
+                Operation::new(0x29, 2, 2, AddressingMode::Immediate),
+                Operation::new(0x25, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x35, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0x2d, 3, 4, AddressingMode::Absolute),
+                Operation::new(0x3d, 3, 4, AddressingMode::Absolute_X),
+                Operation::new(0x39, 3, 4, AddressingMode::Absolute_Y),
+                Operation::new(0x21, 2, 6, AddressingMode::Indirect_X),
+                Operation::new(0x31, 2, 5, AddressingMode::Indirect_Y),
+            ],
+            cpu_functions::logical_and
+        ),
+        OperationCodes::new(
+            OperationName::LogicalInclusiveOR,
+            vec![
+                Operation::new(0x09, 2, 2, AddressingMode::Immediate),
+                Operation::new(0x05, 2, 3, AddressingMode::ZeroPage),
+                Operation::new(0x15, 2, 4, AddressingMode::ZeroPage_X),
+                Operation::new(0x0d, 3, 4, AddressingMode::Absolute),
+                Operation::new(0x1d, 3, 4, AddressingMode::Absolute_X),
+                Operation::new(0x19, 3, 4, AddressingMode::Absolute_Y),
+                Operation::new(0x01, 2, 6, AddressingMode::Indirect_X),
+                Operation::new(0x11, 2, 5, AddressingMode::Indirect_Y),
+            ],
+            cpu_functions::logical_inclusive_or
+        ),
+        OperationCodes::new(
+            OperationName::LogicalShiftRight,
+            vec![
+                Operation::new(0x4a, 1, 2, AddressingMode::Accumulator),
+                Operation::new(0x46, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0x56, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0x4e, 3, 6, AddressingMode::Absolute),
+                Operation::new(0x5e, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::logical_shift_right
+        ),
+        OperationCodes::new(
+            OperationName::PullAccumulator,
+            vec![Operation::new(0x68, 1, 4, AddressingMode::Implied),],
+            cpu_functions::pull_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::PullProcessorStatus,
+            vec![Operation::new(0x28, 1, 4, AddressingMode::Implied),],
+            cpu_functions::pull_processor_status
+        ),
+        OperationCodes::new(
+            OperationName::PushAccumulator,
+            vec![Operation::new(0x48, 1, 3, AddressingMode::Implied),],
+            cpu_functions::push_accumulator
+        ),
+        OperationCodes::new(
+            OperationName::PushProcessorStatus,
+            vec![Operation::new(0x08, 1, 3, AddressingMode::Implied),],
+            cpu_functions::push_processor_status
+        ),
+        OperationCodes::new(
+            OperationName::RotateLeft,
+            vec![
+                Operation::new(0x2a, 1, 2, AddressingMode::Accumulator),
+                Operation::new(0x26, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0x36, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0x2e, 3, 6, AddressingMode::Absolute),
+                Operation::new(0x3e, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::rotate_left
+        ),
+        OperationCodes::new(
+            OperationName::RotateRight,
+            vec![
+                Operation::new(0x6a, 1, 2, AddressingMode::Accumulator),
+                Operation::new(0x66, 2, 5, AddressingMode::ZeroPage),
+                Operation::new(0x76, 2, 6, AddressingMode::ZeroPage_X),
+                Operation::new(0x6e, 3, 6, AddressingMode::Absolute),
+                Operation::new(0x7e, 3, 7, AddressingMode::Absolute_X),
+            ],
+            cpu_functions::rotate_right
+        ),
+        OperationCodes::new(
+            OperationName::SetCarryFlag,
+            vec![Operation::new(0x38, 1, 2, AddressingMode::Implied),],
+            cpu_functions::set_carry_flag
+        ),
+        OperationCodes::new(
+            OperationName::SetDecimalFlag,
+            vec![Operation::new(0xf8, 1, 2, AddressingMode::Implied),],
+            cpu_functions::set_decimal_flag
+        ),
+        OperationCodes::new(
+            OperationName::SetInterruptDisable,
+            vec![Operation::new(0x78, 1, 2, AddressingMode::Implied),],
+            cpu_functions::set_interrupt_disable
         )
     ];
     pub static ref OPERATION_CODES_MAP: HashMap<u8, (&'static Operation, ExecuteFunction)> = {
