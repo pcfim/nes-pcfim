@@ -22,6 +22,8 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
     match mode {
         AddressingMode::Immediate => cpu.program_counter,
 
+        AddressingMode::Implied => cpu.program_counter, // TODO: Fix
+
         AddressingMode::ZeroPage => cpu.memory.memory[cpu.program_counter as usize] as u16,
 
         AddressingMode::Absolute => cpu.memory.read_u16(cpu.program_counter),
@@ -320,6 +322,26 @@ pub fn transfer_y_to_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn transfer_x_to_stack_pointer(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.register_x;
+}
+
+pub fn return_from_interrupt(cpu: &mut CPU, _mode: &AddressingMode) {
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
+    let status = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize];
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
+    let lo = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
+    let hi = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    cpu.program_counter = (hi << 8) | lo;
+    cpu.status = status;
+}
+
+pub fn return_from_subroutine(cpu: &mut CPU, _mode: &AddressingMode) {
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
+    let lo = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
+    let hi = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    cpu.program_counter = (hi << 8) | lo;
+    cpu.program_counter = cpu.program_counter.wrapping_add(1);
 }
 
 pub fn force_interruptions(_cpu: &mut CPU, _mode: &AddressingMode) {}
@@ -743,6 +765,49 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         transfer_x_to_stack_pointer(&mut cpu, &AddressingMode::NoneAddressing);
         assert_eq!(cpu.stack_pointer, TEST_BASE_REGISTER_X);
+    }
+
+    #[test]
+    fn test_return_from_subroutine() {
+        let mut cpu = CPU::new();
+
+        let return_addr = 0xABCD;
+        cpu.stack_pointer = 0xFD;
+        cpu.memory.memory[0x01FE] = ((return_addr - 1) & 0xFF) as u8;
+        cpu.memory.memory[0x01FF] = ((return_addr - 1) >> 8) as u8;
+
+        return_from_subroutine(&mut cpu, &AddressingMode::Implied);
+
+        assert_eq!(
+            cpu.program_counter, return_addr,
+            "RTS should set PC to return address"
+        );
+        assert_eq!(
+            cpu.stack_pointer, 0xFF,
+            "RTS should increment SP by 2 from initial value"
+        );
+    }
+
+    #[test]
+    fn test_return_from_interrupt() {
+        let mut cpu = CPU::new();
+
+        cpu.stack_pointer = 0xFC;
+        cpu.memory.memory[0x01FD] = 0x55;
+        cpu.memory.memory[0x01FE] = 0xCD;
+        cpu.memory.memory[0x01FF] = 0xAB;
+
+        return_from_interrupt(&mut cpu, &AddressingMode::Implied);
+
+        assert_eq!(
+            cpu.program_counter, 0xABCD,
+            "RTI should set PC to popped address"
+        );
+        assert_eq!(cpu.status, 0x55, "RTI should restore status register");
+        assert_eq!(
+            cpu.stack_pointer, 0xFF,
+            "RTI should increment SP by 3 from initial value"
+        );
     }
 
     #[test]
