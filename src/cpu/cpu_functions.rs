@@ -1493,6 +1493,16 @@ mod tests {
     }
 
     #[test]
+    fn test_rotate_right() {
+        let mut cpu = create_test_cpu();
+        cpu.memory.memory[cpu.program_counter as usize] = 0b0000_0011;
+        cpu.status = 0b0000_0001;
+        rotate_right(&mut cpu, &AddressingMode::Immediate);
+        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b1000_0001);
+        assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
+    }
+
+    #[test]
     fn test_rotate_right_accumulator() {
         let mut cpu = create_test_cpu();
         cpu.register_a = 0b0000_0011;
