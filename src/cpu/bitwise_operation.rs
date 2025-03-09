@@ -5,3 +5,13 @@ pub enum BitwiseOperation {
     Unset,
     Flip,
 }
+
+impl BitwiseOperation {
+    pub fn from_bool(value: bool) -> Self {
+        if value {
+            BitwiseOperation::Set
+        } else {
+            BitwiseOperation::Unset
+        }
+    }
+}
