@@ -86,6 +86,10 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
         }
     }
 }
+fn get_bit(current_byte: u8, status_bit: StatusBit) -> u8 {
+    (current_byte >> (status_bit as u8)) & 1
+}
+
 fn update_status_bit(cpu: &mut CPU, position: StatusBit, op: BitwiseOperation) {
     match op {
         BitwiseOperation::Set => {
@@ -362,6 +366,19 @@ pub fn arithmetic_shift_left(cpu: &mut CPU, _mode: &AddressingMode) {
     );
 }
 
+pub fn arithmetic_shift_left_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
+    let mut value = cpu.register_a;
+    let carry = value >> 7;
+    value <<= 1;
+    cpu.register_a = value;
+    update_zero_and_negative_flags(cpu, value);
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
+}
+
 pub fn bit_test(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
     let value = cpu.memory.memory[address as usize];
@@ -435,6 +452,19 @@ pub fn logical_shift_right(cpu: &mut CPU, _mode: &AddressingMode) {
     );
 }
 
+pub fn logical_shift_right_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
+    let mut value = cpu.register_a;
+    let carry = value & 1;
+    value >>= 1;
+    cpu.register_a = value;
+    update_zero_and_negative_flags(cpu, value);
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
+}
+
 pub fn pull_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
     let address = 0x0100 + cpu.stack_pointer as u16;
@@ -465,8 +495,22 @@ pub fn rotate_left(cpu: &mut CPU, _mode: &AddressingMode) {
     let mut value = cpu.memory.memory[address as usize];
     let carry = value >> 7;
     value <<= 1;
-    value |= carry;
+    value |= get_bit(cpu.status, StatusBit::Carry);
     cpu.memory.memory[address as usize] = value;
+    update_zero_and_negative_flags(cpu, value);
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
+}
+
+pub fn rotate_left_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
+    let mut value = cpu.register_a;
+    let carry = value >> 7;
+    value <<= 1;
+    value |= get_bit(cpu.status, StatusBit::Carry);
+    cpu.register_a = value;
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -480,8 +524,22 @@ pub fn rotate_right(cpu: &mut CPU, _mode: &AddressingMode) {
     let mut value = cpu.memory.memory[address as usize];
     let carry = value & 1;
     value >>= 1;
-    value |= carry << 7;
+    value |= get_bit(cpu.status, StatusBit::Carry) << 7;
     cpu.memory.memory[address as usize] = value;
+    update_zero_and_negative_flags(cpu, value);
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        BitwiseOperation::from_bool(carry == 1),
+    );
+}
+
+pub fn rotate_right_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
+    let mut value = cpu.register_a;
+    let carry = value & 1;
+    value >>= 1;
+    value |= get_bit(cpu.status, StatusBit::Carry) << 7;
+    cpu.register_a = value;
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -1333,6 +1391,17 @@ mod tests {
     }
 
     #[test]
+    fn test_arithmetic_shift_left_acumulator() {
+        let mut cpu = create_test_cpu();
+        cpu.register_a = 0b0100_0001;
+        arithmetic_shift_left_accumulator(&mut cpu, &AddressingMode::Accumulator);
+        assert_eq!(cpu.register_a, 0b1000_0010);
+        assert!(cpu.status & (StatusBit::Carry as u8) == 0);
+        assert!(cpu.status & (StatusBit::Negative as u8) == 0);
+        assert!(cpu.status & (StatusBit::Zero as u8) == 0);
+    }
+
+    #[test]
     fn test_bit_test() {
         let mut cpu = create_test_cpu();
 
@@ -1393,18 +1462,43 @@ mod tests {
     }
 
     #[test]
-    fn test_rotate_left() {
+    fn test_logical_shift_right_accumulator() {
         let mut cpu = create_test_cpu();
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1000_0001;
-        rotate_left(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b0000_0011);
+        cpu.register_a = 0b1000_0001;
+        logical_shift_right_accumulator(&mut cpu, &AddressingMode::Accumulator);
+        assert_eq!(cpu.register_a, 0b0100_0000);
+        assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
+        assert_eq!(get_bit(cpu.status, StatusBit::Zero), 0);
+        assert_eq!(get_bit(cpu.status, StatusBit::Negative), 0);
     }
 
     #[test]
-    fn test_rotate_right() {
+    fn test_rotate_left() {
         let mut cpu = create_test_cpu();
         cpu.memory.memory[cpu.program_counter as usize] = 0b1000_0001;
-        rotate_right(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b1100_0000);
+        cpu.status = 0b0000_0001;
+        rotate_left(&mut cpu, &AddressingMode::Immediate);
+        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b0000_0011);
+        assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
+    }
+
+    #[test]
+    fn test_rotate_left_accumulator() {
+        let mut cpu = create_test_cpu();
+        cpu.register_a = 0b1000_0001;
+        cpu.status = 0b0000_0001;
+        rotate_left_accumulator(&mut cpu, &AddressingMode::Accumulator);
+        assert_eq!(cpu.register_a, 0b0000_0011);
+        assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
+    }
+
+    #[test]
+    fn test_rotate_right_accumulator() {
+        let mut cpu = create_test_cpu();
+        cpu.register_a = 0b0000_0011;
+        cpu.status = 0b0000_0001;
+        rotate_right_accumulator(&mut cpu, &AddressingMode::Accumulator);
+        assert_eq!(cpu.register_a, 0b1000_0001);
+        assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
     }
 }

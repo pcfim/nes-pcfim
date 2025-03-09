@@ -367,13 +367,17 @@ lazy_static! {
         OperationCodes::new(
             OperationName::ArithmeticShiftLeft,
             vec![
-                Operation::new(0x0a, 1, 2, AddressingMode::Accumulator),
                 Operation::new(0x06, 2, 5, AddressingMode::ZeroPage),
                 Operation::new(0x16, 2, 6, AddressingMode::ZeroPage_X),
                 Operation::new(0x0e, 3, 6, AddressingMode::Absolute),
                 Operation::new(0x1e, 3, 7, AddressingMode::Absolute_X),
             ],
             cpu_functions::arithmetic_shift_left
+        ),
+        OperationCodes::new(
+            OperationName::ArithmeticShiftLeft,
+            vec![Operation::new(0x0a, 1, 2, AddressingMode::Accumulator)],
+            cpu_functions::arithmetic_shift_left_accumulator
         ),
         OperationCodes::new(
             OperationName::BitTest,
@@ -448,13 +452,17 @@ lazy_static! {
         OperationCodes::new(
             OperationName::LogicalShiftRight,
             vec![
-                Operation::new(0x4a, 1, 2, AddressingMode::Accumulator),
                 Operation::new(0x46, 2, 5, AddressingMode::ZeroPage),
                 Operation::new(0x56, 2, 6, AddressingMode::ZeroPage_X),
                 Operation::new(0x4e, 3, 6, AddressingMode::Absolute),
                 Operation::new(0x5e, 3, 7, AddressingMode::Absolute_X),
             ],
             cpu_functions::logical_shift_right
+        ),
+        OperationCodes::new(
+            OperationName::LogicalShiftRight,
+            vec![Operation::new(0x4a, 1, 2, AddressingMode::Accumulator)],
+            cpu_functions::logical_shift_right_accumulator
         ),
         OperationCodes::new(
             OperationName::PullAccumulator,
@@ -479,7 +487,6 @@ lazy_static! {
         OperationCodes::new(
             OperationName::RotateLeft,
             vec![
-                Operation::new(0x2a, 1, 2, AddressingMode::Accumulator),
                 Operation::new(0x26, 2, 5, AddressingMode::ZeroPage),
                 Operation::new(0x36, 2, 6, AddressingMode::ZeroPage_X),
                 Operation::new(0x2e, 3, 6, AddressingMode::Absolute),
@@ -488,15 +495,24 @@ lazy_static! {
             cpu_functions::rotate_left
         ),
         OperationCodes::new(
+            OperationName::RotateLeft,
+            vec![Operation::new(0x2a, 1, 2, AddressingMode::Accumulator)],
+            cpu_functions::rotate_left_accumulator
+        ),
+        OperationCodes::new(
             OperationName::RotateRight,
             vec![
-                Operation::new(0x6a, 1, 2, AddressingMode::Accumulator),
                 Operation::new(0x66, 2, 5, AddressingMode::ZeroPage),
                 Operation::new(0x76, 2, 6, AddressingMode::ZeroPage_X),
                 Operation::new(0x6e, 3, 6, AddressingMode::Absolute),
                 Operation::new(0x7e, 3, 7, AddressingMode::Absolute_X),
             ],
             cpu_functions::rotate_right
+        ),
+        OperationCodes::new(
+            OperationName::RotateRight,
+            vec![Operation::new(0x6a, 1, 2, AddressingMode::Accumulator)],
+            cpu_functions::rotate_right_accumulator
         ),
         OperationCodes::new(
             OperationName::SetCarryFlag,
