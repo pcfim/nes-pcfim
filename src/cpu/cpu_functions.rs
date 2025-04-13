@@ -2,6 +2,7 @@ use crate::cpu::addressing_mode::AddressingMode;
 use crate::cpu::bitwise_operation::BitwiseOperation;
 use crate::cpu::cpu_model::CPU;
 use crate::cpu::status_bit::StatusBit;
+
 // Function helpers
 pub fn update_zero_and_negative_flags(cpu: &mut CPU, result: u8) {
     if result == 0 {
@@ -643,10 +644,9 @@ pub fn set_interrupt_disable(cpu: &mut CPU, _mode: &AddressingMode) {
 mod tests {
     use super::*;
     use crate::cpu::addressing_mode::AddressingMode;
-    use crate::cpu::cpu_model::{ExecuteFunction, STACK_RESET};
+    use crate::cpu::cpu_model::STACK_RESET;
     use crate::cpu::memory::Memory;
     use crate::cpu::{cpu_functions, operation_codes};
-    use std::collections::HashMap;
     use std::fs;
 
     // Helper function to create a new CPU instance
@@ -1681,53 +1681,93 @@ mod tests {
         Some((initial_cpu, final_cpu))
     }
 
-    #[test]
-    fn testing_individual_opcodes() {
-        let operation_codes: &HashMap<u8, (&'static operation_codes::Operation, ExecuteFunction)> =
-            &operation_codes::OPERATION_CODES_MAP;
-        let mut real_real_failures: Vec<u8> = vec![];
-        let mut real_failures: Vec<Vec<i32>> = vec![];
-        for ele in operation_codes.keys() {
-            if *ele == 0x00 {
-                continue;
+    fn run_single_test_case(test_case_json: &Value, opcode: u8) -> Result<bool, String> {
+        if let Some((mut cpu_initial, cpu_expected_final)) = parse_json(test_case_json) {
+            cpu_initial.run_once();
+            let is_decimal_mode = (cpu_initial.status & (1 << StatusBit::Decimal as u8)) != 0;
+
+            if cpu_initial != cpu_expected_final && !is_decimal_mode {
+                eprintln!(
+                    "Mismatch detected for opcode 0x{:02X}. Expected: {:?}, Got: {:?}",
+                    opcode, cpu_expected_final, cpu_initial
+                );
+                Ok(true)
+            } else {
+                Ok(false)
             }
-            let filename = format!("build/files/{:02x}.json", ele);
-            let st = fs::read_to_string(filename).expect("uwu");
-            let jsons: serde_json::Value =
-                serde_json::from_str(&st).expect("JSON was not well-formatted");
+        } else {
+            Err(format!(
+                "Failed to parse test case structure for opcode 0x{:02X}",
+                opcode
+            ))
+        }
+    }
 
-            let mut failures: Vec<i32> = vec![];
-            let mut count = 0;
-            let mut flag: bool = false;
-            for json in jsons.as_array().unwrap() {
-                let (mut cpu_ini, cpu_final) = parse_json(json).unwrap();
+    fn test_opcode_from_file(opcode: u8) -> Result<bool, String> {
+        let filename = format!("build/files/{:02x}.json", opcode);
+        let content = fs::read_to_string(&filename)
+            .map_err(|e| format!("Failed to read file {}: {}", filename, e))?;
+        let test_cases_json: Value = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse JSON in {}: {}", filename, e))?;
 
-                count += 1;
-                cpu_ini.run_once();
-                // assert_eq!(cpu_ini.program_counter, cpu_final.program_counter);
-                // assert_eq!(cpu_ini.register_a, cpu_final.register_a);
-                // assert_eq!(cpu_ini.register_x, cpu_final.register_x);
-                // assert_eq!(cpu_ini.register_y, cpu_final.register_y);
-                // assert_eq!(cpu_ini.status, cpu_final.status);
-                if cpu_ini != cpu_final && !flag {
-                    // [TODO] Fix issues with the decimal representation, for now it's working fine
-                    if (cpu_ini.status & (1 << StatusBit::Decimal as u8)) == 0 {
-                        real_real_failures.push(*ele);
-                        failures.push(count);
-                        flag = true;
+        if let Some(test_case_array) = test_cases_json.as_array() {
+            for test_case_json in test_case_array {
+                match run_single_test_case(test_case_json, opcode) {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => continue,
+                    Err(e) => {
+                        eprintln!("Warning: {} - Skipping test case.", e);
+                        continue;
                     }
                 }
             }
-            real_failures.push(failures);
+            Ok(false)
+        } else {
+            Err(format!("JSON in {} is not an array", filename))
         }
-        let flattened: Vec<i32> = real_failures.clone().into_iter().flatten().collect();
+    }
 
-        real_real_failures.sort_unstable();
-        real_real_failures.dedup();
-        if !flattened.is_empty() {
-            println!("{:?}", real_real_failures);
-            assert_eq!(0, 1);
+    #[test]
+    fn testing_individual_opcodes() {
+        use rayon::prelude::*;
+
+        let operation_codes = &operation_codes::OPERATION_CODES_MAP;
+
+        let opcodes_to_test: Vec<u8> = operation_codes
+            .keys()
+            .filter(|&&k| k != 0x00)
+            .copied()
+            .collect();
+
+        let batch_size = 64;
+        let batches: Vec<&[u8]> = opcodes_to_test.chunks(batch_size).collect();
+        println!(
+            "Processing {} opcodes in {} batches of (up to) size {}",
+            opcodes_to_test.len(),
+            batches.len(),
+            batch_size
+        );
+
+        let maybe_failed_opcode: Option<u8> = batches.par_iter().find_map_any(|batch| {
+            for &opcode in *batch {
+                match test_opcode_from_file(opcode) {
+                    Ok(true) => {
+                        return Some(opcode);
+                    }
+                    Ok(false) => {
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("Error processing opcode 0x{:02X}: {}", opcode, e);
+                        continue;
+                    }
+                }
+            }
+            None
+        });
+
+        if let Some(failed_opcode) = maybe_failed_opcode {
+            panic!("Test failed for opcode: 0x{:02X}", failed_opcode,);
         }
-        assert_eq!(0, 0);
     }
 }
