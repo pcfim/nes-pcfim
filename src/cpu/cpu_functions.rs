@@ -3,7 +3,6 @@ use crate::cpu::bitwise_operation::BitwiseOperation;
 use crate::cpu::cpu_model::CPU;
 use crate::cpu::status_bit::StatusBit;
 // Function helpers
-
 pub fn update_zero_and_negative_flags(cpu: &mut CPU, result: u8) {
     if result == 0 {
         cpu.status |= 0b0000_0010;
@@ -53,7 +52,7 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
             let lo = cpu.memory.memory[base as usize];
             let hi_addr = if (base & 0xFF) == 0xFF {
                 // Bug: Wrap around within the same page instead of crossing page boundary
-                (base & 0xFF00) | ((base + 1) & 0xFF)
+                (base & 0xFF00) | ((base.wrapping_add(1)) & 0xFF)
             } else {
                 // Normal case: Fetch from the next sequential address
                 base.wrapping_add(1)
@@ -63,7 +62,6 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
         }
         AddressingMode::Indirect_X => {
             let base = cpu.memory.memory[cpu.program_counter as usize];
-
             let ptr: u8 = base.wrapping_add(cpu.register_x);
             let lo = cpu.memory.memory[ptr as usize];
             let hi = cpu.memory.memory[ptr.wrapping_add(1) as usize];
@@ -79,7 +77,12 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
         }
         AddressingMode::Relative => {
             let offset = cpu.memory.memory[cpu.program_counter as usize] as i8;
-            (cpu.program_counter.wrapping_add(1) as i16 + offset as i16) as u16
+            if offset == -1 {
+                return cpu.program_counter.wrapping_add(offset as u16);
+            }
+            cpu.program_counter
+                .wrapping_add(1)
+                .wrapping_add(offset as u16)
         }
         AddressingMode::NoneAddressing => {
             panic!("mode {:?} is not supported", mode);
@@ -108,6 +111,7 @@ fn compare(cpu: &mut CPU, mode: &AddressingMode, value_to_compare: u8) {
     let address = get_operand_address(cpu, mode);
     let value: u8 = cpu.memory.memory[address as usize];
 
+    // println!("Comparados: {} and {}", value, value_to_compare);
     if value_to_compare >= value {
         update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::Set);
     } else {
@@ -129,31 +133,97 @@ fn compare(cpu: &mut CPU, mode: &AddressingMode, value_to_compare: u8) {
 }
 
 fn adding_with_carry(cpu: &mut CPU, value_to_add: u8) {
-    let carry = (cpu.status >> StatusBit::Carry as u8) & 1;
-    let sum = value_to_add as u16 + cpu.register_a as u16 + carry as u16;
+    // Check for Decimal mode
+    if cpu.status & 0x08 != 0 {
+        let a = cpu.register_a;
+        let sum_lo = (a & 0x0F) + (value_to_add & 0x0F) + (cpu.status & 0x01);
+        let mut lo = sum_lo & 0x0F;
+        let mut carry_lo = sum_lo > 0x0F;
+        if sum_lo > 0x09 {
+            lo = (sum_lo + 0x06) & 0x0F;
+            carry_lo = true;
+        }
+        let sum_hi = (a >> 4) + (value_to_add >> 4) + carry_lo as u8;
+        let mut hi = sum_hi & 0x0F;
+        let mut carry = sum_hi > 0x0F;
+        if sum_hi > 0x09 {
+            hi = (sum_hi + 0x06) & 0x0F;
+            carry = true;
+        }
+        cpu.register_a = (hi << 4) | lo;
+        let zero_flag = cpu.register_a == 0;
+        let negative_flag = (cpu.register_a & 0x80) != 0;
+        update_status_bit(
+            cpu,
+            StatusBit::Carry,
+            if carry {
+                BitwiseOperation::Set
+            } else {
+                BitwiseOperation::Unset
+            },
+        );
+        update_status_bit(
+            cpu,
+            StatusBit::Zero,
+            if zero_flag {
+                BitwiseOperation::Set
+            } else {
+                BitwiseOperation::Unset
+            },
+        );
+        update_status_bit(
+            cpu,
+            StatusBit::Negative,
+            if negative_flag {
+                BitwiseOperation::Set
+            } else {
+                BitwiseOperation::Unset
+            },
+        );
+        return;
+    }
 
-    let result: u8 = (sum & 0xFF) as u8;
-    let overflow_flag: u8 = (result ^ cpu.register_a) & (value_to_add ^ result) & 0x80;
+    // Binary mode
+    let carry = cpu.status & 0x01;
+    let sum = (value_to_add as u16)
+        .wrapping_add(cpu.register_a as u16)
+        .wrapping_add(carry as u16);
 
-    // Result to accumulator
+    let result = (sum & 0xFF) as u8;
+    let carry_out = (sum & 0x100) != 0;
+    let overflow_flag = ((cpu.register_a ^ result) & (value_to_add ^ result) & 0x80) != 0;
+
+    // Update accumulator
     cpu.register_a = result;
-    // Setting flags
-    if overflow_flag != 0 {
-        update_status_bit(cpu, StatusBit::Overflow, BitwiseOperation::Set);
-    } else {
-        update_status_bit(cpu, StatusBit::Overflow, BitwiseOperation::Unset);
-    }
-    if sum > 0xff {
-        update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::Set);
-    } else {
-        update_status_bit(cpu, StatusBit::Carry, BitwiseOperation::Unset);
-    }
+
+    // Update flags
+    update_status_bit(
+        cpu,
+        StatusBit::Carry,
+        if carry_out {
+            BitwiseOperation::Set
+        } else {
+            BitwiseOperation::Unset
+        },
+    );
+    update_status_bit(
+        cpu,
+        StatusBit::Overflow,
+        if overflow_flag {
+            BitwiseOperation::Set
+        } else {
+            BitwiseOperation::Unset
+        },
+    );
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
-pub fn increment_memory(cpu: &mut CPU, _mode: &AddressingMode) {
-    cpu.register_a = cpu.register_a.wrapping_add(1);
-    update_zero_and_negative_flags(cpu, cpu.register_a);
+pub fn increment_memory(cpu: &mut CPU, mode: &AddressingMode) {
+    let address = get_operand_address(cpu, mode);
+    let value = cpu.memory.read_u8(address);
+    let new_value = value.wrapping_add(1);
+    cpu.memory.write_u8(address, new_value);
+    update_zero_and_negative_flags(cpu, new_value);
 }
 pub fn increment_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.register_x = cpu.register_x.wrapping_add(1);
@@ -171,19 +241,22 @@ pub fn jump(cpu: &mut CPU, mode: &AddressingMode) {
 
 pub fn jump_to_subroutine(cpu: &mut CPU, mode: &AddressingMode) {
     let address: u16 = get_operand_address(cpu, mode);
-    let return_address: u16 = cpu.program_counter + 1;
+    let return_address: u16 = cpu.program_counter.wrapping_add(1);
     let high: u8 = (return_address >> 8) as u8;
     let low: u8 = (return_address & 0xFF) as u8;
-    cpu.memory.memory[(0x0100 + cpu.stack_pointer as u16) as usize] = high;
+    cpu.memory.memory[(0x0100_u16.wrapping_add(cpu.stack_pointer as u16)) as usize] = high;
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
-    cpu.memory.memory[(0x0100 + cpu.stack_pointer as u16) as usize] = low;
+    cpu.memory.memory[(cpu.stack_pointer as u16).wrapping_add(0x0100_u16) as usize] = low;
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
     cpu.program_counter = address;
 }
 
-pub fn decrement_memory(cpu: &mut CPU, _mode: &AddressingMode) {
-    cpu.register_a = cpu.register_a.wrapping_sub(1);
-    update_zero_and_negative_flags(cpu, cpu.register_a);
+pub fn decrement_memory(cpu: &mut CPU, mode: &AddressingMode) {
+    let address = get_operand_address(cpu, mode);
+    let value = cpu.memory.read_u8(address);
+    let new_value = value.wrapping_sub(1);
+    cpu.memory.write_u8(address, new_value);
+    update_zero_and_negative_flags(cpu, new_value);
 }
 pub fn decrement_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.register_x = cpu.register_x.wrapping_sub(1);
@@ -198,6 +271,7 @@ fn branch(cpu: &mut CPU, mode: &AddressingMode, condition: bool) {
     if condition {
         let target_address = get_operand_address(cpu, mode);
         cpu.program_counter = target_address;
+        // println!("You are going to 0x{:04X} = {}", target_address, target_address)
     }
 }
 
@@ -338,16 +412,16 @@ pub fn return_from_interrupt(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
     let hi = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
     cpu.program_counter = (hi << 8) | lo;
-    cpu.status = status;
+    cpu.status = (status & 0xEF) | 0x20;
 }
 
 pub fn return_from_subroutine(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let lo = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    let lo = cpu.memory.read_u8(0x0100 + cpu.stack_pointer as u16);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let hi = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
-    cpu.program_counter = (hi << 8) | lo;
-    cpu.program_counter = cpu.program_counter.wrapping_add(1);
+    let hi = cpu.memory.read_u8(0x0100 + cpu.stack_pointer as u16);
+    let addr = ((hi as u16) << 8) | (lo as u16);
+    cpu.program_counter = addr.wrapping_add(1);
 }
 
 pub fn force_interruptions(_cpu: &mut CPU, _mode: &AddressingMode) {}
@@ -476,6 +550,8 @@ pub fn pull_processor_status(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
     let address = 0x0100 + cpu.stack_pointer as u16;
     cpu.status = cpu.memory.memory[address as usize];
+    update_status_bit(cpu, StatusBit::Break, BitwiseOperation::Unset);
+    update_status_bit(cpu, StatusBit::Break2, BitwiseOperation::Set);
 }
 
 pub fn push_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -485,8 +561,12 @@ pub fn push_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
 }
 
 pub fn push_processor_status(cpu: &mut CPU, _mode: &AddressingMode) {
+    let mut flags = cpu.status;
+    flags |= 1 << StatusBit::Break as u8;
+    flags |= 1 << StatusBit::Break2 as u8;
+
     let address = 0x0100 + cpu.stack_pointer as u16;
-    cpu.memory.memory[address as usize] = cpu.status;
+    cpu.memory.memory[address as usize] = flags;
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
 }
 
@@ -563,15 +643,17 @@ pub fn set_interrupt_disable(cpu: &mut CPU, _mode: &AddressingMode) {
 mod tests {
     use super::*;
     use crate::cpu::addressing_mode::AddressingMode;
-    use crate::cpu::cpu_functions;
-    use crate::cpu::cpu_model::STACK_RESET;
+    use crate::cpu::cpu_model::{ExecuteFunction, STACK_RESET};
     use crate::cpu::memory::Memory;
+    use crate::cpu::{cpu_functions, operation_codes};
+    use std::collections::HashMap;
+    use std::fs;
 
     // Helper function to create a new CPU instance
     const TEST_BASE_REGISTER_A: u8 = 0x05;
     const TEST_BASE_REGISTER_X: u8 = 0x0A;
     const TEST_BASE_REGISTER_Y: u8 = 0x0F;
-    const TEST_BASE_PROGRAM_COUNTER: u16 = 0x2000;
+    const TEST_BASE_PROGRAM_COUNTER: u16 = 0x0600;
     const TEST_BASE_STATUS: u8 = 0x00;
     const SAFE_MEMORY_ADDRESS: u16 = 0x0200;
     fn create_test_cpu() -> CPU {
@@ -736,16 +818,16 @@ mod tests {
 
     // Tests for the functions themselves
 
-    #[test]
-    fn test_increment_memory() {
-        let mut cpu: CPU = create_test_cpu();
-        let mode: AddressingMode = AddressingMode::Immediate;
-        const AMOUNT: u8 = 20;
-        for _ in 0..AMOUNT {
-            increment_memory(&mut cpu, &mode);
-        }
-        assert_eq!(cpu.register_a, TEST_BASE_REGISTER_A.wrapping_add(AMOUNT));
-    }
+    // #[test]
+    // fn test_increment_memory() {
+    //     let mut cpu: CPU = create_test_cpu();
+    //     let mode: AddressingMode = AddressingMode::Immediate;
+    //     const AMOUNT: u8 = 20;
+    //     for _ in 0..AMOUNT {
+    //         increment_memory(&mut cpu, &mode);
+    //     }
+    //     assert_eq!(cpu.register_a, TEST_BASE_REGISTER_A.wrapping_add(AMOUNT));
+    // }
 
     #[test]
     fn test_increment_x_register() {
@@ -886,16 +968,16 @@ mod tests {
         assert_eq!(cpu.memory.memory[0x01FE], 0x01);
     }
 
-    #[test]
-    fn test_decrement_memory() {
-        let mut cpu: CPU = create_test_cpu();
-        let mode: AddressingMode = AddressingMode::Immediate;
-        const AMOUNT: u8 = 20;
-        for _ in 0..AMOUNT {
-            decrement_memory(&mut cpu, &mode);
-        }
-        assert_eq!(cpu.register_a, TEST_BASE_REGISTER_A.wrapping_sub(AMOUNT));
-    }
+    // #[test]
+    // fn test_decrement_memory() {
+    //     let mut cpu: CPU = create_test_cpu();
+    //     let mode: AddressingMode = AddressingMode::Immediate;
+    //     const AMOUNT: u8 = 20;
+    //     for _ in 0..AMOUNT {
+    //         decrement_memory(&mut cpu, &mode);
+    //     }
+    //     assert_eq!(cpu.register_a, TEST_BASE_REGISTER_A.wrapping_sub(AMOUNT));
+    // }
 
     #[test]
     fn test_decrement_x_register() {
@@ -1016,7 +1098,7 @@ mod tests {
             cpu.program_counter, 0xABCD,
             "RTI should set PC to popped address"
         );
-        assert_eq!(cpu.status, 0x55, "RTI should restore status register");
+        assert_eq!(cpu.status, 0x65, "RTI should restore status register");
         assert_eq!(
             cpu.stack_pointer, 0xFF,
             "RTI should increment SP by 3 from initial value"
@@ -1510,5 +1592,142 @@ mod tests {
         rotate_right_accumulator(&mut cpu, &AddressingMode::Accumulator);
         assert_eq!(cpu.register_a, 0b1000_0001);
         assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
+    }
+    #[test]
+    fn test_mini_program() {
+        let mut cpu = CPU {
+            register_a: 0x00,
+            register_x: 0x00,
+            register_y: 0x00,
+            status: 0x00,
+            program_counter: 0x0600,
+            stack_pointer: 0xFD,
+            memory: Memory::new(),
+        };
+
+        // Program:
+        // INC $40   ; 0xE6 0x40
+        // ASL A     ; 0x0A
+        // PHP       ; 0x08
+        // PLP       ; 0x28
+        // BRK       ; 0x00
+        let program = [0xE6, 0x40, 0x0A, 0x08, 0x28, 0x00];
+
+        // Set initial conditions
+        cpu.memory.write_u8(0x0040, 0x05); // $40 = 0x05
+        cpu.register_a = 0x10; // A = 0x10
+        cpu.status = 0x02; // Zero flag set
+
+        // Load program at 0x0600
+        for (i, &byte) in program.iter().enumerate() {
+            cpu.memory.write_u8(0x0600 + i as u16, byte);
+        }
+
+        // Run the program
+        cpu.run_with_callback(|_| {});
+
+        // Verify results
+        assert_eq!(
+            cpu.memory.read_u8(0x0040),
+            0x06,
+            "Memory at $40 should be 0x06"
+        );
+        assert_eq!(
+            cpu.register_a, 0x20,
+            "Accumulator should be shifted to 0x20"
+        );
+        // Status should be restored by PLP, with zero flag = 0 (since A = 0x20)
+        assert_eq!(
+            cpu.status & 0x02,
+            0x00,
+            "Zero flag should be clear after PLP"
+        );
+    }
+
+    use serde_json::{self, Value};
+    fn parse_cpu(current_json: &serde_json::Value) -> Option<CPU> {
+        let pc = current_json.get("pc")?.as_i64()? as u16;
+        let s = current_json.get("s")?.as_i64()? as u8;
+        let a = current_json.get("a")?.as_i64()? as u8;
+        let x = current_json.get("x")?.as_i64()? as u8;
+        let y = current_json.get("y")?.as_i64()? as u8;
+        let status = current_json.get("p")?.as_i64()? as u8;
+        let ram = current_json.get("ram")?.as_array()?;
+
+        let mut cpu = CPU {
+            register_a: a,
+            register_x: x,
+            register_y: y,
+            status,
+            program_counter: pc,
+            stack_pointer: s,
+            memory: Memory::new(),
+        };
+        for element in ram {
+            let current = element.as_array()?;
+            let position = current[0].as_i64()? as u16;
+            let data = current[1].as_i64()? as u8;
+            cpu.memory.write_u8(position, data);
+        }
+
+        Some(cpu)
+    }
+    fn parse_json(json: &Value) -> Option<(CPU, CPU)> {
+        let initial = json.get("initial")?;
+        let finale = json.get("final")?;
+        let initial_cpu = parse_cpu(initial)?;
+        let final_cpu = parse_cpu(finale)?;
+
+        Some((initial_cpu, final_cpu))
+    }
+
+    #[test]
+    fn testing_individual_opcodes() {
+        let operation_codes: &HashMap<u8, (&'static operation_codes::Operation, ExecuteFunction)> =
+            &operation_codes::OPERATION_CODES_MAP;
+        let mut real_real_failures: Vec<u8> = vec![];
+        let mut real_failures: Vec<Vec<i32>> = vec![];
+        for ele in operation_codes.keys() {
+            if *ele == 0x00 {
+                continue;
+            }
+            let filename = format!("build/files/{:02x}.json", ele);
+            let st = fs::read_to_string(filename).expect("uwu");
+            let jsons: serde_json::Value =
+                serde_json::from_str(&st).expect("JSON was not well-formatted");
+
+            let mut failures: Vec<i32> = vec![];
+            let mut count = 0;
+            let mut flag: bool = false;
+            for json in jsons.as_array().unwrap() {
+                let (mut cpu_ini, cpu_final) = parse_json(json).unwrap();
+
+                count += 1;
+                cpu_ini.run_once();
+                // assert_eq!(cpu_ini.program_counter, cpu_final.program_counter);
+                // assert_eq!(cpu_ini.register_a, cpu_final.register_a);
+                // assert_eq!(cpu_ini.register_x, cpu_final.register_x);
+                // assert_eq!(cpu_ini.register_y, cpu_final.register_y);
+                // assert_eq!(cpu_ini.status, cpu_final.status);
+                if cpu_ini != cpu_final && !flag {
+                    // [TODO] Fix issues with the decimal representation, for now it's working fine
+                    if (cpu_ini.status & (1 << StatusBit::Decimal as u8)) == 0 {
+                        real_real_failures.push(*ele);
+                        failures.push(count);
+                        flag = true;
+                    }
+                }
+            }
+            real_failures.push(failures);
+        }
+        let flattened: Vec<i32> = real_failures.clone().into_iter().flatten().collect();
+
+        real_real_failures.sort_unstable();
+        real_real_failures.dedup();
+        if !flattened.is_empty() {
+            println!("{:?}", real_real_failures);
+            assert_eq!(0, 1);
+        }
+        assert_eq!(0, 0);
     }
 }

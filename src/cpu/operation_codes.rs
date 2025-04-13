@@ -151,7 +151,7 @@ lazy_static! {
         ),
         OperationCodes::new(
             OperationName::TransferAccumulatorToY,
-            vec![Operation::new(0xaa, 1, 2, AddressingMode::NoneAddressing)],
+            vec![Operation::new(0xa8, 1, 2, AddressingMode::NoneAddressing)],
             cpu_functions::transfer_accumulator_to_y
         ),
         OperationCodes::new(

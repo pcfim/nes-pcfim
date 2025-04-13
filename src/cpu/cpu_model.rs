@@ -3,6 +3,7 @@ use crate::cpu::memory::Memory;
 pub type ExecuteFunction = fn(&mut CPU, &AddressingMode);
 pub const STACK: u16 = 0x0100;
 pub const STACK_RESET: u8 = 0xfd;
+#[derive(PartialEq, Eq, Debug)]
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
