@@ -7,6 +7,7 @@ pub enum StatusBit {
     Interrupt = 2,
     Decimal = 3,
     Break = 4,
+    Break2 = 5,
     Overflow = 6,
     Negative = 7,
 }

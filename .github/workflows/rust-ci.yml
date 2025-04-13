@@ -10,7 +10,7 @@ on:
       - dev
       - main
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
@@ -23,8 +23,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install graphic library
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Decompress test suites
+        run: bash scripts/decompress.sh
 
       - name: Run tests
         run: cargo test --verbose
@@ -39,6 +45,12 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install graphic library
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
+      # - name: Decompress test suites
+      #   run:  bash scripts/decompress.sh
 
       - name: Build release
         run: cargo build --release
@@ -58,11 +70,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install graphic library
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
       - name: Download built binary
         uses: actions/download-artifact@v4
         with:
           name: nes-pcfim
           path: target/release/
+
+      - name: Decompress test suites
+        run: bash scripts/decompress.sh
 
       - name: Determine Release Type
         id: release_type
