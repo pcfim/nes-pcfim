@@ -1,5 +1,5 @@
+use crate::bus::bus_handler::Bus;
 use crate::cpu::addressing_mode::AddressingMode;
-use crate::cpu::memory::Memory;
 pub type ExecuteFunction = fn(&mut CPU, &AddressingMode);
 pub const STACK: u16 = 0x0100;
 pub const STACK_RESET: u8 = 0xfd;
@@ -11,5 +11,5 @@ pub struct CPU {
     pub status: u8,
     pub program_counter: u16,
     pub stack_pointer: u8,
-    pub memory: Memory,
+    pub bus: Bus,
 }

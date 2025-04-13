@@ -1,5 +1,6 @@
 use std::env;
 
+use nes_pcfim::cpu::cpu_instructions::Mem;
 use nes_pcfim::cpu::cpu_model::CPU;
 use rand::Rng;
 use sdl2::event::Event;
@@ -20,25 +21,25 @@ fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
                 keycode: Some(Keycode::W),
                 ..
             } => {
-                cpu.memory.write_u16(0xff, 0x77);
+                cpu.bus.mem_write_u16(0xff, 0x77);
             }
             Event::KeyDown {
                 keycode: Some(Keycode::A),
                 ..
             } => {
-                cpu.memory.write_u16(0xff, 0x61);
+                cpu.bus.mem_write_u16(0xff, 0x61);
             }
             Event::KeyDown {
                 keycode: Some(Keycode::S),
                 ..
             } => {
-                cpu.memory.write_u16(0xff, 0x73);
+                cpu.bus.mem_write_u16(0xff, 0x73);
             }
             Event::KeyDown {
                 keycode: Some(Keycode::D),
                 ..
             } => {
-                cpu.memory.write_u16(0xff, 0x64);
+                cpu.bus.mem_write_u16(0xff, 0x64);
             }
             _ => {}
         }
@@ -62,7 +63,7 @@ fn read_screen_state(cpu: &CPU, frame: &mut [u8; 32 * 3 * 32]) -> bool {
     let mut frame_idx = 0;
     let mut update = false;
     for i in 0x0200..0x0600 {
-        let color_idx = cpu.memory.read_u8(i as u16);
+        let color_idx = cpu.bus.mem_read(i as u16);
         let (b1, b2, b3) = color(color_idx).rgb();
         if frame[frame_idx] != b1 || frame[frame_idx + 1] != b2 || frame[frame_idx + 2] != b3 {
             frame[frame_idx] = b1;
@@ -126,14 +127,14 @@ fn main() {
         )
         .unwrap();
     let mut cpu = CPU::new();
-    cpu.memory.load(game_code);
+    cpu.bus.load(game_code);
     cpu.reset();
 
     let mut screen_state = [0_u8; 32 * 3 * 32];
     let mut rng = rand::thread_rng();
     cpu.run_with_callback(move |cpu| {
         handle_user_input(cpu, &mut event_pump);
-        cpu.memory.write_u8(0xfe, rng.gen_range(1, 16));
+        cpu.bus.mem_write(0xfe, rng.gen_range(1, 16));
         if read_screen_state(cpu, &mut screen_state) {
             texture
                 .with_lock(None, |buffer: &mut [u8], pitch| {
