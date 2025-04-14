@@ -2,12 +2,15 @@ use std::env;
 
 use nes_pcfim::cpu::cpu_instructions::Mem;
 use nes_pcfim::cpu::cpu_model::CPU;
+use nes_pcfim::joypads::joypad_model::JoypadButton;
+
 use rand::Rng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
+use std::collections::HashMap;
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
@@ -77,6 +80,16 @@ fn read_screen_state(cpu: &CPU, frame: &mut [u8; 32 * 3 * 32]) -> bool {
 }
 
 fn main() {
+    let mut key_map = HashMap::new();
+    key_map.insert(Keycode::Down, JoypadButton::DOWN);
+    key_map.insert(Keycode::Up, JoypadButton::UP);
+    key_map.insert(Keycode::Right, JoypadButton::RIGHT);
+    key_map.insert(Keycode::Left, JoypadButton::LEFT);
+    key_map.insert(Keycode::Space, JoypadButton::SELECT);
+    key_map.insert(Keycode::Return, JoypadButton::START);
+    key_map.insert(Keycode::A, JoypadButton::BUTTON_A);
+    key_map.insert(Keycode::S, JoypadButton::BUTTON_B);
+
     let game_code = vec![
         0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02,
         0x85, 0x02, 0xa9, 0x04, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9,

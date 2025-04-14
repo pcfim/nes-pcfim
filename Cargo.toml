@@ -6,7 +6,7 @@
 
 [dependencies]
     lazy_static = "1.4.0"
-    bitflags = "1.2.1"
+    bitflags = "2.9.0"
 
     sdl2 = "0.37.0"
     rand = "=0.7.3"
