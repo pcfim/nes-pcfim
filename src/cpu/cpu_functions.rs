@@ -3,6 +3,7 @@ use crate::cpu::bitwise_operation::BitwiseOperation;
 use crate::cpu::cpu_model::CPU;
 use crate::cpu::status_bit::StatusBit;
 
+use super::cpu_instructions::Mem;
 // Function helpers
 pub fn update_zero_and_negative_flags(cpu: &mut CPU, result: u8) {
     if result == 0 {
@@ -26,31 +27,31 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
 
         AddressingMode::Implied => cpu.program_counter, // TODO: Fix
 
-        AddressingMode::ZeroPage => cpu.memory.memory[cpu.program_counter as usize] as u16,
+        AddressingMode::ZeroPage => cpu.bus.mem_read(cpu.program_counter) as u16,
 
-        AddressingMode::Absolute => cpu.memory.read_u16(cpu.program_counter),
+        AddressingMode::Absolute => cpu.bus.mem_read_u16(cpu.program_counter),
 
         AddressingMode::ZeroPage_X => {
-            let pos = cpu.memory.memory[cpu.program_counter as usize];
+            let pos = cpu.bus.mem_read(cpu.program_counter);
             pos.wrapping_add(cpu.register_x) as u16
         }
         AddressingMode::ZeroPage_Y => {
-            let pos = cpu.memory.memory[cpu.program_counter as usize];
+            let pos = cpu.bus.mem_read(cpu.program_counter);
             pos.wrapping_add(cpu.register_y) as u16
         }
 
         AddressingMode::Absolute_X => {
-            let base = cpu.memory.read_u16(cpu.program_counter);
+            let base = cpu.bus.mem_read_u16(cpu.program_counter);
             base.wrapping_add(cpu.register_x as u16)
         }
         AddressingMode::Absolute_Y => {
-            let base = cpu.memory.read_u16(cpu.program_counter);
+            let base = cpu.bus.mem_read_u16(cpu.program_counter);
             base.wrapping_add(cpu.register_y as u16)
         }
 
         AddressingMode::Indirect => {
-            let base = cpu.memory.read_u16(cpu.program_counter);
-            let lo = cpu.memory.memory[base as usize];
+            let base = cpu.bus.mem_read_u16(cpu.program_counter);
+            let lo = cpu.bus.mem_read(base) as u16;
             let hi_addr = if (base & 0xFF) == 0xFF {
                 // Bug: Wrap around within the same page instead of crossing page boundary
                 (base & 0xFF00) | ((base.wrapping_add(1)) & 0xFF)
@@ -58,32 +59,32 @@ pub fn get_operand_address(cpu: &mut CPU, mode: &AddressingMode) -> u16 {
                 // Normal case: Fetch from the next sequential address
                 base.wrapping_add(1)
             };
-            let hi: u8 = cpu.memory.memory[hi_addr as usize];
-            ((hi as u16) << 8) | (lo as u16)
+            let hi: u8 = cpu.bus.mem_read(hi_addr);
+            ((hi as u16) << 8) | (lo)
         }
         AddressingMode::Indirect_X => {
-            let base = cpu.memory.memory[cpu.program_counter as usize];
+            let base = cpu.bus.mem_read(cpu.program_counter);
             let ptr: u8 = base.wrapping_add(cpu.register_x);
-            let lo = cpu.memory.memory[ptr as usize];
-            let hi = cpu.memory.memory[ptr.wrapping_add(1) as usize];
+            let lo = cpu.bus.mem_read(ptr as u16);
+            let hi = cpu.bus.mem_read(ptr.wrapping_add(1) as u16);
             ((hi as u16) << 8) | (lo as u16)
         }
         AddressingMode::Indirect_Y => {
-            let base = cpu.memory.memory[cpu.program_counter as usize];
+            let base = cpu.bus.mem_read(cpu.program_counter);
 
-            let lo = cpu.memory.memory[base as usize];
-            let hi = cpu.memory.memory[base.wrapping_add(1) as usize];
+            let lo = cpu.bus.mem_read(base as u16);
+            let hi = cpu.bus.mem_read(base.wrapping_add(1) as u16);
             let deref_base = ((hi as u16) << 8) | (lo as u16);
             deref_base.wrapping_add(cpu.register_y as u16)
         }
         AddressingMode::Relative => {
-            let offset = cpu.memory.memory[cpu.program_counter as usize] as i8;
+            let offset = cpu.bus.mem_read(cpu.program_counter) as i8;
             if offset == -1 {
-                return cpu.program_counter.wrapping_add(offset as u16);
+                return cpu.program_counter.wrapping_add_signed(offset as i16);
             }
             cpu.program_counter
                 .wrapping_add(1)
-                .wrapping_add(offset as u16)
+                .wrapping_add_signed(offset as i16)
         }
         AddressingMode::NoneAddressing => {
             panic!("mode {:?} is not supported", mode);
@@ -110,7 +111,7 @@ fn update_status_bit(cpu: &mut CPU, position: StatusBit, op: BitwiseOperation) {
 }
 fn compare(cpu: &mut CPU, mode: &AddressingMode, value_to_compare: u8) {
     let address = get_operand_address(cpu, mode);
-    let value: u8 = cpu.memory.memory[address as usize];
+    let value: u8 = cpu.bus.mem_read(address);
 
     // println!("Comparados: {} and {}", value, value_to_compare);
     if value_to_compare >= value {
@@ -221,9 +222,9 @@ fn adding_with_carry(cpu: &mut CPU, value_to_add: u8) {
 
 pub fn increment_memory(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let value = cpu.memory.read_u8(address);
+    let value = cpu.bus.mem_read(address);
     let new_value = value.wrapping_add(1);
-    cpu.memory.write_u8(address, new_value);
+    cpu.bus.mem_write(address, new_value);
     update_zero_and_negative_flags(cpu, new_value);
 }
 pub fn increment_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -245,18 +246,23 @@ pub fn jump_to_subroutine(cpu: &mut CPU, mode: &AddressingMode) {
     let return_address: u16 = cpu.program_counter.wrapping_add(1);
     let high: u8 = (return_address >> 8) as u8;
     let low: u8 = (return_address & 0xFF) as u8;
-    cpu.memory.memory[(0x0100_u16.wrapping_add(cpu.stack_pointer as u16)) as usize] = high;
+
+    let mut value = 0x0100_u16.wrapping_add(cpu.stack_pointer as u16);
+    cpu.bus.mem_write(value, high);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
-    cpu.memory.memory[(cpu.stack_pointer as u16).wrapping_add(0x0100_u16) as usize] = low;
+
+    value = 0x0100_u16.wrapping_add(cpu.stack_pointer as u16);
+    cpu.bus.mem_write(value, low);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
+
     cpu.program_counter = address;
 }
 
 pub fn decrement_memory(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let value = cpu.memory.read_u8(address);
+    let value = cpu.bus.mem_read(address);
     let new_value = value.wrapping_sub(1);
-    cpu.memory.write_u8(address, new_value);
+    cpu.bus.mem_write(address, new_value);
     update_zero_and_negative_flags(cpu, new_value);
 }
 pub fn decrement_x_register(cpu: &mut CPU, _mode: &AddressingMode) {
@@ -326,19 +332,19 @@ pub fn branch_if_overflow_set(cpu: &mut CPU, mode: &AddressingMode) {
 
 pub fn load_accumulator(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let value: u8 = cpu.memory.memory[address as usize];
+    let value: u8 = cpu.bus.mem_read(address);
     cpu.register_a = value;
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 pub fn load_x_register(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let value: u8 = cpu.memory.memory[address as usize];
+    let value: u8 = cpu.bus.mem_read(address);
     cpu.register_x = value;
     update_zero_and_negative_flags(cpu, cpu.register_x);
 }
 pub fn load_y_register(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let value: u8 = cpu.memory.memory[address as usize];
+    let value: u8 = cpu.bus.mem_read(address);
     cpu.register_y = value;
     update_zero_and_negative_flags(cpu, cpu.register_y);
 }
@@ -354,15 +360,15 @@ pub fn transfer_accumulator_to_y(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn store_accumulator(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    cpu.memory.memory[address as usize] = cpu.register_a;
+    cpu.bus.mem_write(address, cpu.register_a);
 }
 pub fn store_x_register(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    cpu.memory.memory[address as usize] = cpu.register_x;
+    cpu.bus.mem_write(address, cpu.register_x);
 }
 pub fn store_y_register(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    cpu.memory.memory[address as usize] = cpu.register_y;
+    cpu.bus.mem_write(address, cpu.register_y);
 }
 pub fn compare_a(cpu: &mut CPU, mode: &AddressingMode) {
     compare(cpu, mode, cpu.register_a);
@@ -376,13 +382,13 @@ pub fn compare_y(cpu: &mut CPU, mode: &AddressingMode) {
 
 pub fn add_with_carry(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let result: u8 = cpu.memory.memory[address as usize];
+    let result: u8 = cpu.bus.mem_read(address);
     adding_with_carry(cpu, result);
 }
 
 pub fn substract_with_carry(cpu: &mut CPU, mode: &AddressingMode) {
     let address = get_operand_address(cpu, mode);
-    let result: u8 = cpu.memory.memory[address as usize];
+    let result: u8 = cpu.bus.mem_read(address);
     adding_with_carry(cpu, !result);
 }
 
@@ -407,20 +413,22 @@ pub fn transfer_x_to_stack_pointer(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn return_from_interrupt(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let status = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize];
+    let status = cpu.bus.mem_read(0x0100 + cpu.stack_pointer as u16);
+
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let lo = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+
+    let lo = cpu.bus.mem_read(0x0100 + cpu.stack_pointer as u16) as u16;
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let hi = cpu.memory.memory[0x0100 + cpu.stack_pointer as usize] as u16;
+    let hi = cpu.bus.mem_read(0x0100 + cpu.stack_pointer as u16) as u16;
     cpu.program_counter = (hi << 8) | lo;
     cpu.status = (status & 0xEF) | 0x20;
 }
 
 pub fn return_from_subroutine(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let lo = cpu.memory.read_u8(0x0100 + cpu.stack_pointer as u16);
+    let lo = cpu.bus.mem_read(0x0100 + cpu.stack_pointer as u16);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
-    let hi = cpu.memory.read_u8(0x0100 + cpu.stack_pointer as u16);
+    let hi = cpu.bus.mem_read(0x0100 + cpu.stack_pointer as u16);
     let addr = ((hi as u16) << 8) | (lo as u16);
     cpu.program_counter = addr.wrapping_add(1);
 }
@@ -429,10 +437,10 @@ pub fn force_interruptions(_cpu: &mut CPU, _mode: &AddressingMode) {}
 
 pub fn arithmetic_shift_left(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let mut value = cpu.memory.memory[address as usize];
+    let mut value = cpu.bus.mem_read(address);
     let carry = value >> 7;
     value <<= 1;
-    cpu.memory.memory[address as usize] = value;
+    cpu.bus.mem_write(address, value);
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -456,7 +464,7 @@ pub fn arithmetic_shift_left_accumulator(cpu: &mut CPU, _mode: &AddressingMode) 
 
 pub fn bit_test(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let value = cpu.memory.memory[address as usize];
+    let value = cpu.bus.mem_read(address);
     let result = cpu.register_a & value;
 
     update_status_bit(
@@ -494,31 +502,31 @@ pub fn clear_overflow_flag(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn exclusive_or(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let value = cpu.memory.memory[address as usize];
+    let value = cpu.bus.mem_read(address);
     cpu.register_a ^= value;
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
 pub fn logical_and(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let value = cpu.memory.memory[address as usize];
+    let value = cpu.bus.mem_read(address);
     cpu.register_a &= value;
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
 pub fn logical_inclusive_or(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let value = cpu.memory.memory[address as usize];
+    let value = cpu.bus.mem_read(address);
     cpu.register_a |= value;
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
 pub fn logical_shift_right(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let mut value = cpu.memory.memory[address as usize];
+    let mut value = cpu.bus.mem_read(address);
     let carry = value & 1;
     value >>= 1;
-    cpu.memory.memory[address as usize] = value;
+    cpu.bus.mem_write(address, value);
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -543,21 +551,21 @@ pub fn logical_shift_right_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
 pub fn pull_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
     let address = 0x0100 + cpu.stack_pointer as u16;
-    cpu.register_a = cpu.memory.memory[address as usize];
+    cpu.register_a = cpu.bus.mem_read(address);
     update_zero_and_negative_flags(cpu, cpu.register_a);
 }
 
 pub fn pull_processor_status(cpu: &mut CPU, _mode: &AddressingMode) {
     cpu.stack_pointer = cpu.stack_pointer.wrapping_add(1);
     let address = 0x0100 + cpu.stack_pointer as u16;
-    cpu.status = cpu.memory.memory[address as usize];
+    cpu.status = cpu.bus.mem_read(address);
     update_status_bit(cpu, StatusBit::Break, BitwiseOperation::Unset);
     update_status_bit(cpu, StatusBit::Break2, BitwiseOperation::Set);
 }
 
 pub fn push_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = 0x0100 + cpu.stack_pointer as u16;
-    cpu.memory.memory[address as usize] = cpu.register_a;
+    cpu.bus.mem_write(address, cpu.register_a);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
 }
 
@@ -567,17 +575,17 @@ pub fn push_processor_status(cpu: &mut CPU, _mode: &AddressingMode) {
     flags |= 1 << StatusBit::Break2 as u8;
 
     let address = 0x0100 + cpu.stack_pointer as u16;
-    cpu.memory.memory[address as usize] = flags;
+    cpu.bus.mem_write(address, flags);
     cpu.stack_pointer = cpu.stack_pointer.wrapping_sub(1);
 }
 
 pub fn rotate_left(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let mut value = cpu.memory.memory[address as usize];
+    let mut value = cpu.bus.mem_read(address);
     let carry = value >> 7;
     value <<= 1;
     value |= get_bit(cpu.status, StatusBit::Carry);
-    cpu.memory.memory[address as usize] = value;
+    cpu.bus.mem_write(address, value);
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -602,11 +610,11 @@ pub fn rotate_left_accumulator(cpu: &mut CPU, _mode: &AddressingMode) {
 
 pub fn rotate_right(cpu: &mut CPU, _mode: &AddressingMode) {
     let address = get_operand_address(cpu, _mode);
-    let mut value = cpu.memory.memory[address as usize];
+    let mut value = cpu.bus.mem_read(address);
     let carry = value & 1;
     value >>= 1;
     value |= get_bit(cpu.status, StatusBit::Carry) << 7;
-    cpu.memory.memory[address as usize] = value;
+    cpu.bus.mem_write(address, value);
     update_zero_and_negative_flags(cpu, value);
     update_status_bit(
         cpu,
@@ -644,9 +652,9 @@ pub fn set_interrupt_disable(cpu: &mut CPU, _mode: &AddressingMode) {
 mod tests {
     use super::*;
     use crate::cpu::addressing_mode::AddressingMode;
+    use crate::cpu::cpu_functions;
     use crate::cpu::cpu_model::STACK_RESET;
-    use crate::cpu::memory::Memory;
-    use crate::cpu::{cpu_functions, operation_codes};
+    use crate::{bus::bus_handler::Bus, cpu::operation_codes};
     use std::fs;
 
     // Helper function to create a new CPU instance
@@ -664,7 +672,7 @@ mod tests {
             status: TEST_BASE_STATUS,
             program_counter: TEST_BASE_PROGRAM_COUNTER,
             stack_pointer: STACK_RESET,
-            memory: Memory::new(),
+            bus: Bus::new(),
         }
     }
     fn get_bit(current_byte: u8, status_bit: StatusBit) -> u8 {
@@ -687,7 +695,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data: u16 = 0x80;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
         let mode: AddressingMode = AddressingMode::ZeroPage;
 
         assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), data);
@@ -698,7 +706,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data: u16 = 0x80;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
         let mode: AddressingMode = AddressingMode::ZeroPage_X;
 
         assert_eq!(
@@ -712,7 +720,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data: u16 = 0x80;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
 
         let mode = AddressingMode::ZeroPage_Y;
         assert_eq!(
@@ -724,19 +732,18 @@ mod tests {
     #[test]
     fn test_get_operand_address_relative_positive() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.program_counter = 0x2000;
-        cpu.memory.memory[cpu.program_counter as usize] = 0x05;
+        cpu.program_counter = 0x1000;
+        cpu.bus.mem_write(cpu.program_counter, 0x05);
         let mode: AddressingMode = AddressingMode::Relative;
-        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x2006);
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x1006);
     }
 
     #[test]
     fn test_get_operand_address_relative_negative() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.program_counter = 0x2000;
-        cpu.memory.memory[cpu.program_counter as usize] = 0xFB;
+        cpu.bus.mem_write(cpu.program_counter, 0xFB);
         let mode: AddressingMode = AddressingMode::Relative;
-        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x1FFC);
+        assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x05FC);
     }
 
     #[test]
@@ -744,7 +751,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data: u16 = 0xC000;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
         let mode = AddressingMode::Absolute;
 
         assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), data);
@@ -755,7 +762,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data = 0xC000;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
         let mode = AddressingMode::Absolute_X;
 
         assert_eq!(
@@ -769,7 +776,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let data = 0xC000;
-        cpu.memory.write_u16(cpu.program_counter, data);
+        cpu.bus.mem_write_u16(cpu.program_counter, data);
         let mode = AddressingMode::Absolute_Y;
 
         assert_eq!(
@@ -784,9 +791,9 @@ mod tests {
 
         let base: u8 = 0x20;
         let ptr: u8 = base.wrapping_add(cpu.register_x);
-        cpu.memory.memory[cpu.program_counter as usize] = base;
-        cpu.memory.memory[ptr as usize] = 0x34;
-        cpu.memory.memory[ptr.wrapping_add(1) as usize] = 0x12;
+        cpu.bus.mem_write(cpu.program_counter, base);
+        cpu.bus.mem_write(ptr as u16, 0x34);
+        cpu.bus.mem_write(ptr.wrapping_add(1) as u16, 0x12);
 
         let mode = AddressingMode::Indirect_X;
         assert_eq!(cpu_functions::get_operand_address(&mut cpu, &mode), 0x1234);
@@ -797,9 +804,9 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
 
         let base: u8 = 0x40;
-        cpu.memory.memory[cpu.program_counter as usize] = base;
-        cpu.memory.memory[base as usize] = 0x78;
-        cpu.memory.memory[base.wrapping_add(1) as usize] = 0x56;
+        cpu.bus.mem_write(cpu.program_counter, base);
+        cpu.bus.mem_write(base as u16, 0x78);
+        cpu.bus.mem_write(base.wrapping_add(1) as u16, 0x56);
 
         let mode = AddressingMode::Indirect_Y;
         assert_eq!(
@@ -855,8 +862,8 @@ mod tests {
     fn test_jump_absolute_normal() {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[0x1000] = 0x34;
-        cpu.memory.memory[0x1001] = 0x12;
+        cpu.bus.mem_write(0x1000, 0x34);
+        cpu.bus.mem_write(0x1001, 0x12);
 
         jump(&mut cpu, &AddressingMode::Absolute);
 
@@ -867,8 +874,8 @@ mod tests {
     fn test_jump_absolute_max_address() {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x2000;
-        cpu.memory.memory[0x2000] = 0xFF;
-        cpu.memory.memory[0x2001] = 0xFF;
+        cpu.bus.mem_write(0x2000, 0xFF);
+        cpu.bus.mem_write(0x2001, 0xFF);
 
         jump(&mut cpu, &AddressingMode::Absolute);
 
@@ -879,10 +886,10 @@ mod tests {
     fn test_jump_indirect_normal() {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x3000;
-        cpu.memory.memory[0x3000] = 0x50;
-        cpu.memory.memory[0x3001] = 0x40;
-        cpu.memory.memory[0x4050] = 0x78;
-        cpu.memory.memory[0x4051] = 0x56;
+        cpu.bus.mem_write(0x3000, 0x50);
+        cpu.bus.mem_write(0x3001, 0x40);
+        cpu.bus.mem_write(0x4050, 0x78);
+        cpu.bus.mem_write(0x4051, 0x56);
 
         jump(&mut cpu, &AddressingMode::Indirect);
 
@@ -893,11 +900,11 @@ mod tests {
     fn test_jump_indirect_page_boundary_bug() {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x4000;
-        cpu.memory.memory[0x4000] = 0xFF;
-        cpu.memory.memory[0x4001] = 0x01;
-        cpu.memory.memory[0x01FF] = 0xCD;
-        cpu.memory.memory[0x0200] = 0xAB;
-        cpu.memory.memory[0x0100] = 0xEF;
+        cpu.bus.mem_write(0x4000, 0xFF);
+        cpu.bus.mem_write(0x4001, 0x01);
+        cpu.bus.mem_write(0x01FF, 0xCD);
+        cpu.bus.mem_write(0x0200, 0xAB);
+        cpu.bus.mem_write(0x0100, 0xEF);
 
         jump(&mut cpu, &AddressingMode::Indirect);
 
@@ -909,15 +916,15 @@ mod tests {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x1001;
         cpu.stack_pointer = 0xFF;
-        cpu.memory.memory[0x1001] = 0x34;
-        cpu.memory.memory[0x1002] = 0x12;
+        cpu.bus.mem_write(0x1001, 0x34);
+        cpu.bus.mem_write(0x1002, 0x12);
 
         jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
 
         assert_eq!(cpu.program_counter, 0x1234);
         assert_eq!(cpu.stack_pointer, 0xFD);
-        assert_eq!(cpu.memory.memory[0x01FF], 0x10);
-        assert_eq!(cpu.memory.memory[0x01FE], 0x02);
+        assert_eq!(cpu.bus.mem_read(0x01FF), 0x10);
+        assert_eq!(cpu.bus.mem_read(0x01FE), 0x02);
     }
 
     #[test]
@@ -925,15 +932,15 @@ mod tests {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x2000;
         cpu.stack_pointer = 0x01;
-        cpu.memory.memory[0x2000] = 0x56;
-        cpu.memory.memory[0x2001] = 0x34;
+        cpu.bus.mem_write(0x2000, 0x56);
+        cpu.bus.mem_write(0x2001, 0x34);
 
         jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
 
         assert_eq!(cpu.program_counter, 0x3456);
         assert_eq!(cpu.stack_pointer, 0xFF);
-        assert_eq!(cpu.memory.memory[0x0101], 0x20);
-        assert_eq!(cpu.memory.memory[0x0100], 0x01);
+        assert_eq!(cpu.bus.mem_read(0x0101), 0x20);
+        assert_eq!(cpu.bus.mem_read(0x0100), 0x01);
     }
 
     #[test]
@@ -941,15 +948,15 @@ mod tests {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x3000;
         cpu.stack_pointer = 0xFF;
-        cpu.memory.memory[0x3000] = 0x00;
-        cpu.memory.memory[0x3001] = 0x00;
+        cpu.bus.mem_write(0x3000, 0x00);
+        cpu.bus.mem_write(0x3001, 0x00);
 
         jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
 
         assert_eq!(cpu.program_counter, 0x0000);
         assert_eq!(cpu.stack_pointer, 0xFD);
-        assert_eq!(cpu.memory.memory[0x01FF], 0x30);
-        assert_eq!(cpu.memory.memory[0x01FE], 0x01);
+        assert_eq!(cpu.bus.mem_read(0x01FF), 0x30);
+        assert_eq!(cpu.bus.mem_read(0x01FE), 0x01);
     }
 
     #[test]
@@ -957,15 +964,15 @@ mod tests {
         let mut cpu = CPU::new();
         cpu.program_counter = 0x4000;
         cpu.stack_pointer = 0xFF;
-        cpu.memory.memory[0x4000] = 0xFF;
-        cpu.memory.memory[0x4001] = 0xFF;
+        cpu.bus.mem_write(0x4000, 0xFF);
+        cpu.bus.mem_write(0x4001, 0xFF);
 
         jump_to_subroutine(&mut cpu, &AddressingMode::Absolute);
 
         assert_eq!(cpu.program_counter, 0xFFFF);
         assert_eq!(cpu.stack_pointer, 0xFD);
-        assert_eq!(cpu.memory.memory[0x01FF], 0x40);
-        assert_eq!(cpu.memory.memory[0x01FE], 0x01);
+        assert_eq!(cpu.bus.mem_read(0x01FF), 0x40);
+        assert_eq!(cpu.bus.mem_read(0x01FE), 0x01);
     }
 
     // #[test]
@@ -1004,11 +1011,11 @@ mod tests {
     #[test]
     fn test_load_accumulator() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory
-            .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
+        cpu.bus
+            .mem_write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
 
         let data_to_load: u8 = 0xff;
-        cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize] = data_to_load;
+        cpu.bus.mem_write(SAFE_MEMORY_ADDRESS, data_to_load);
 
         load_accumulator(&mut cpu, &AddressingMode::Absolute);
         assert_eq!(cpu.register_a, data_to_load);
@@ -1068,8 +1075,8 @@ mod tests {
 
         let return_addr = 0xABCD;
         cpu.stack_pointer = 0xFD;
-        cpu.memory.memory[0x01FE] = ((return_addr - 1) & 0xFF) as u8;
-        cpu.memory.memory[0x01FF] = ((return_addr - 1) >> 8) as u8;
+        cpu.bus.mem_write(0x01FE, ((return_addr - 1) & 0xFF) as u8);
+        cpu.bus.mem_write(0x01FF, ((return_addr - 1) >> 8) as u8);
 
         return_from_subroutine(&mut cpu, &AddressingMode::Implied);
 
@@ -1088,9 +1095,9 @@ mod tests {
         let mut cpu = CPU::new();
 
         cpu.stack_pointer = 0xFC;
-        cpu.memory.memory[0x01FD] = 0x55;
-        cpu.memory.memory[0x01FE] = 0xCD;
-        cpu.memory.memory[0x01FF] = 0xAB;
+        cpu.bus.mem_write(0x01FD, 0x55);
+        cpu.bus.mem_write(0x01FE, 0xCD);
+        cpu.bus.mem_write(0x01FF, 0xAB);
 
         return_from_interrupt(&mut cpu, &AddressingMode::Implied);
 
@@ -1108,37 +1115,37 @@ mod tests {
     #[test]
     fn test_store_accumulator() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory
-            .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
+        cpu.bus
+            .mem_write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
         store_accumulator(&mut cpu, &AddressingMode::Absolute);
-        let value_stored = cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize];
+        let value_stored = cpu.bus.mem_read(SAFE_MEMORY_ADDRESS);
         assert_eq!(value_stored, TEST_BASE_REGISTER_A);
     }
 
     #[test]
     fn test_store_x_register() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory
-            .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
+        cpu.bus
+            .mem_write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
         store_x_register(&mut cpu, &AddressingMode::Absolute);
-        let value_stored = cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize];
+        let value_stored = cpu.bus.mem_read(SAFE_MEMORY_ADDRESS);
         assert_eq!(value_stored, TEST_BASE_REGISTER_X);
     }
 
     #[test]
     fn test_store_y_register() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory
-            .write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
+        cpu.bus
+            .mem_write_u16(TEST_BASE_PROGRAM_COUNTER, SAFE_MEMORY_ADDRESS);
         store_y_register(&mut cpu, &AddressingMode::Absolute);
-        let value_stored = cpu.memory.memory[SAFE_MEMORY_ADDRESS as usize];
+        let value_stored = cpu.bus.mem_read(SAFE_MEMORY_ADDRESS);
         assert_eq!(value_stored, TEST_BASE_REGISTER_Y);
     }
 
     #[test]
     fn test_compare_equal() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory.memory[TEST_BASE_PROGRAM_COUNTER as usize] = 0x40;
+        cpu.bus.mem_write(TEST_BASE_PROGRAM_COUNTER, 0x40);
         compare(&mut cpu, &AddressingMode::Immediate, 0x40);
         let status: u8 = cpu.status;
         assert_eq!(status, 0x03);
@@ -1146,7 +1153,7 @@ mod tests {
     #[test]
     fn test_compare_lesser() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory.memory[TEST_BASE_PROGRAM_COUNTER as usize] = 0xff;
+        cpu.bus.mem_write(TEST_BASE_PROGRAM_COUNTER, 0xff);
         compare(&mut cpu, &AddressingMode::Immediate, 0x01);
         let status: u8 = cpu.status;
         assert_eq!(status, 0x00);
@@ -1155,7 +1162,7 @@ mod tests {
     #[test]
     fn test_compare_greater() {
         let mut cpu: CPU = create_test_cpu();
-        cpu.memory.memory[TEST_BASE_PROGRAM_COUNTER as usize] = 0x80;
+        cpu.bus.mem_write(TEST_BASE_PROGRAM_COUNTER, 0x80);
         compare(&mut cpu, &AddressingMode::Immediate, 0x7f);
         let status: u8 = cpu.status;
         assert_eq!(status, 0x80);
@@ -1214,7 +1221,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_carry_clear(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1227,7 +1234,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x01;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_carry_clear(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1239,7 +1246,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x01;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_carry_set(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1252,7 +1259,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_carry_set(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1264,7 +1271,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x02;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_equal(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1277,7 +1284,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_equal(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1289,7 +1296,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x80;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_minus(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1302,7 +1309,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_minus(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1314,7 +1321,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_not_equal(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1327,7 +1334,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x02;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_not_equal(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1339,7 +1346,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_positive(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1352,7 +1359,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x80;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_positive(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1364,7 +1371,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_overflow_clear(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1377,7 +1384,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x40;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_overflow_clear(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1389,7 +1396,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x40;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_overflow_set(&mut cpu, &AddressingMode::Relative);
         assert_eq!(
             cpu.program_counter,
@@ -1402,7 +1409,7 @@ mod tests {
         let mut cpu: CPU = create_test_cpu();
         cpu.status = 0x00;
         cpu.program_counter = 0x1000;
-        cpu.memory.memory[cpu.program_counter as usize] = 5;
+        cpu.bus.mem_write(cpu.program_counter, 5);
         cpu_functions::branch_if_overflow_set(&mut cpu, &AddressingMode::Relative);
         assert_eq!(cpu.program_counter, 0x1000);
     }
@@ -1412,7 +1419,8 @@ mod tests {
         for testing_parameters in generate_tests_add_with_carry() {
             let mut cpu: CPU = create_test_cpu();
             cpu.register_a = testing_parameters.0;
-            cpu.memory.memory[TEST_BASE_PROGRAM_COUNTER as usize] = testing_parameters.1;
+            cpu.bus
+                .mem_write(TEST_BASE_PROGRAM_COUNTER, testing_parameters.1);
             if testing_parameters.2 {
                 update_status_bit(&mut cpu, StatusBit::Carry, BitwiseOperation::Set);
             } else {
@@ -1439,7 +1447,8 @@ mod tests {
         for testing_parameters in generate_tests_substract_with_carry() {
             let mut cpu: CPU = create_test_cpu();
             cpu.register_a = testing_parameters.0;
-            cpu.memory.memory[TEST_BASE_PROGRAM_COUNTER as usize] = testing_parameters.1;
+            cpu.bus
+                .mem_write(TEST_BASE_PROGRAM_COUNTER, testing_parameters.1);
             if testing_parameters.2 {
                 update_status_bit(&mut cpu, StatusBit::Carry, BitwiseOperation::Set);
             } else {
@@ -1464,9 +1473,9 @@ mod tests {
     #[test]
     fn test_arithmetic_shift_left() {
         let mut cpu = create_test_cpu();
-        cpu.memory.memory[cpu.program_counter as usize] = 0b0100_0001;
+        cpu.bus.mem_write(cpu.program_counter, 0b0100_0001);
         arithmetic_shift_left(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b1000_0010);
+        assert_eq!(cpu.bus.mem_read(cpu.program_counter), 0b1000_0010);
         assert!(cpu.status & (StatusBit::Carry as u8) == 0);
         assert!(cpu.status & (StatusBit::Negative as u8) == 0);
         assert!(cpu.status & (StatusBit::Zero as u8) == 0);
@@ -1488,7 +1497,7 @@ mod tests {
         let mut cpu = create_test_cpu();
 
         cpu.register_a = 0b0000_0101;
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1100_0000;
+        cpu.bus.mem_write(cpu.program_counter, 0b1100_0000);
         let mode = AddressingMode::Immediate;
 
         bit_test(&mut cpu, &mode);
@@ -1509,7 +1518,7 @@ mod tests {
     fn test_exclusive_or() {
         let mut cpu = create_test_cpu();
         cpu.register_a = 0b1010_1010;
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1100_1100;
+        cpu.bus.mem_write(cpu.program_counter, 0b1100_1100);
         exclusive_or(&mut cpu, &AddressingMode::Immediate);
         assert_eq!(cpu.register_a, 0b0110_0110);
     }
@@ -1518,7 +1527,7 @@ mod tests {
     fn test_logical_and() {
         let mut cpu = create_test_cpu();
         cpu.register_a = 0b1010_1010;
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1100_1100;
+        cpu.bus.mem_write(cpu.program_counter, 0b1100_1100);
         logical_and(&mut cpu, &AddressingMode::Immediate);
         assert_eq!(cpu.register_a, 0b1000_1000);
     }
@@ -1527,7 +1536,7 @@ mod tests {
     fn test_logical_inclusive_or() {
         let mut cpu = create_test_cpu();
         cpu.register_a = 0b1010_1010;
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1100_1100;
+        cpu.bus.mem_write(cpu.program_counter, 0b1100_1100);
         logical_inclusive_or(&mut cpu, &AddressingMode::Immediate);
         assert_eq!(cpu.register_a, 0b1110_1110);
     }
@@ -1535,9 +1544,9 @@ mod tests {
     #[test]
     fn test_logical_shift_right() {
         let mut cpu = create_test_cpu();
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1000_0001;
+        cpu.bus.mem_write(cpu.program_counter, 0b1000_0001);
         logical_shift_right(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b0100_0000);
+        assert_eq!(cpu.bus.mem_read(cpu.program_counter), 0b0100_0000);
         assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
         assert_eq!(get_bit(cpu.status, StatusBit::Zero), 0);
         assert_eq!(get_bit(cpu.status, StatusBit::Negative), 0);
@@ -1557,10 +1566,10 @@ mod tests {
     #[test]
     fn test_rotate_left() {
         let mut cpu = create_test_cpu();
-        cpu.memory.memory[cpu.program_counter as usize] = 0b1000_0001;
+        cpu.bus.mem_write(cpu.program_counter, 0b1000_0001);
         cpu.status = 0b0000_0001;
         rotate_left(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b0000_0011);
+        assert_eq!(cpu.bus.mem_read(cpu.program_counter), 0b0000_0011);
         assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
     }
 
@@ -1577,10 +1586,10 @@ mod tests {
     #[test]
     fn test_rotate_right() {
         let mut cpu = create_test_cpu();
-        cpu.memory.memory[cpu.program_counter as usize] = 0b0000_0011;
+        cpu.bus.mem_write(cpu.program_counter, 0b0000_0011);
         cpu.status = 0b0000_0001;
         rotate_right(&mut cpu, &AddressingMode::Immediate);
-        assert_eq!(cpu.memory.memory[cpu.program_counter as usize], 0b1000_0001);
+        assert_eq!(cpu.bus.mem_read(cpu.program_counter), 0b1000_0001);
         assert_eq!(get_bit(cpu.status, StatusBit::Carry), 1);
     }
 
@@ -1602,7 +1611,7 @@ mod tests {
             status: 0x00,
             program_counter: 0x0600,
             stack_pointer: 0xFD,
-            memory: Memory::new(),
+            bus: Bus::new(),
         };
 
         // Program:
@@ -1614,13 +1623,13 @@ mod tests {
         let program = [0xE6, 0x40, 0x0A, 0x08, 0x28, 0x00];
 
         // Set initial conditions
-        cpu.memory.write_u8(0x0040, 0x05); // $40 = 0x05
+        cpu.bus.mem_write(0x0040, 0x05); // $40 = 0x05
         cpu.register_a = 0x10; // A = 0x10
         cpu.status = 0x02; // Zero flag set
 
         // Load program at 0x0600
         for (i, &byte) in program.iter().enumerate() {
-            cpu.memory.write_u8(0x0600 + i as u16, byte);
+            cpu.bus.mem_write(0x0600 + i as u16, byte);
         }
 
         // Run the program
@@ -1628,7 +1637,7 @@ mod tests {
 
         // Verify results
         assert_eq!(
-            cpu.memory.read_u8(0x0040),
+            cpu.bus.mem_read(0x0040),
             0x06,
             "Memory at $40 should be 0x06"
         );
@@ -1661,13 +1670,13 @@ mod tests {
             status,
             program_counter: pc,
             stack_pointer: s,
-            memory: Memory::new(),
+            bus: Bus::new(),
         };
         for element in ram {
             let current = element.as_array()?;
             let position = current[0].as_i64()? as u16;
             let data = current[1].as_i64()? as u8;
-            cpu.memory.write_u8(position, data);
+            cpu.bus.mem_write(position, data);
         }
 
         Some(cpu)
@@ -1688,8 +1697,8 @@ mod tests {
 
             if cpu_initial != cpu_expected_final && !is_decimal_mode {
                 eprintln!(
-                    "Mismatch detected for opcode 0x{:02X}. Expected: {:?}, Got: {:?}",
-                    opcode, cpu_expected_final, cpu_initial
+                    "Mismatch detected for opcode 0x{:02X}. and testcase\n{}",
+                    opcode, test_case_json
                 );
                 Ok(true)
             } else {
@@ -1725,6 +1734,42 @@ mod tests {
         } else {
             Err(format!("JSON in {} is not an array", filename))
         }
+    }
+
+    #[test]
+    fn testing_standalone() {
+        let filename = "static/standalone-test.json";
+        let content = fs::read_to_string(filename)
+            .map_err(|e| format!("Failed to read file {}: {}", filename, e))
+            .unwrap();
+
+        let test_cases_json: Value = serde_json::from_str(&content).unwrap();
+        let (mut cpu_initial, cpu_final) = parse_json(&test_cases_json).unwrap();
+        cpu_initial.run_once();
+        assert_eq!(
+            cpu_initial.register_a, cpu_final.register_a,
+            "missmatch in register A"
+        );
+        assert_eq!(
+            cpu_initial.register_x, cpu_final.register_x,
+            "missmatch in register X"
+        );
+        assert_eq!(
+            cpu_initial.register_y, cpu_final.register_y,
+            "missmatch in register Y"
+        );
+        assert_eq!(
+            cpu_initial.program_counter, cpu_final.program_counter,
+            "missmatch in PC counter"
+        );
+        assert_eq!(
+            cpu_initial.stack_pointer, cpu_final.stack_pointer,
+            "missmatch in Stack pointer"
+        );
+        assert_eq!(
+            cpu_initial.stack_pointer, cpu_final.stack_pointer,
+            "missmatch in Status"
+        );
     }
 
     #[test]
